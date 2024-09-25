@@ -4,9 +4,47 @@
 #define LSB(WORD) ((WORD) & 0xFF)
 #define MSB(WORD) ((WORD) >> 8)
 
-#define DATA8 fetch_byte(cpu);
-#define DATA16 fetch_word(cpu);
-#define ADDR16 fetch_word(cpu);
+#define DATA8 fetch_byte(cpu)
+#define DATA16 fetch_word(cpu)
+#define ADDR16 fetch_word(cpu)
+
+void i8080_init(i8080_cpu_t* cpu, 
+                i8080_reader_t* rb, 
+                i8080_output_t* wb, 
+                i8080_input_t* inb, 
+                i8080_output_t* outb) {
+    cpu->psw = 0x0004;
+    cpu->bc  = 0x0000;
+    cpu->de  = 0x0000;
+    cpu->hl  = 0x0000;
+
+    cpu->read_byte  = rb;
+    cpu->write_byte = wb;
+    cpu->in_byte    = inb;
+    cpu->out_byte   = outb;
+}
+
+void i8080_debug(i8080_cpu_t* cpu) {
+    printf("\n Registers: \n");
+    printf("\t A: %.2x");
+    printf("B: %.2x");
+    printf("C: %.2x");
+    printf("D: %.2x");
+    printf("E: %.2x");
+    printf("H: %.2x");
+    printf("L: %.2x");
+    printf("\n Register Pairs: \n");
+    printf("\t PSW: %.4x", cpu->psw);
+    printf("BC: %.4x", cpu->bc);
+    printf("DE: %.4x", cpu->de);
+    printf("HL: %.4x", cpu->hl);
+    printf("\n Flags: \n");
+    printf("\t Z: %d", cpu->f.z);
+    printf("S: %d", cpu->f.s);
+    printf("P: %d", cpu->f.p);
+    printf("CY: %d", cpu->f.cy);
+    printf("AC: %d", cpu->f.ac);
+}
 
 static inline uint8_t get_m(i8080_cpu_t* cpu) {
     return cpu->read_byte(cpu->hl);
@@ -17,7 +55,7 @@ static inline void set_m(i8080_cpu_t* cpu, uint8_t val) {
 }
 
 static inline uint8_t fetch_byte(i8080_cpu_t* cpu) {
-    return cpu->read_byte(cpu->pc++)
+    return cpu->read_byte(cpu->pc++);
 }
 
 static inline uint16_t fetch_word(i8080_cpu_t* cpu) {
@@ -116,10 +154,10 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // MVI M, data
         case MVI_M_D8: set_m(cpu, DATA8); break;
         // LXI rp, data 16
-        case LXI_B_D16:  cpu->bc = IMM16;
-        case LXI_D_D16:  cpu->de = IMM16;
-        case LXI_H_D16:  cpu->hl = IMM16;
-        case LXI_SP_D16: cpu->sp = IMM16;
+        case LXI_B_D16:  cpu->bc = DATA16;
+        case LXI_D_D16:  cpu->de = DATA16;
+        case LXI_H_D16:  cpu->hl = DATA16;
+        case LXI_SP_D16: cpu->sp = DATA16;
         // LDA addr
         case LDA_A16: cpu->a = cpu->read_byte(ADDR16); break;
         // STA addr
@@ -139,9 +177,67 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
             uint8_t tmp = cpu->de;
             cpu->de = cpu->hl;
             cpu->hl = tmp;
+            break;
         }
+
+        #define WITH_CARRY cpu->f.cy
+        #define WITHOUT_CARRY 0
+
+        #define WITH_BORROW cpu->f.cy
+        #define WITHOUT_BORROW 0
+
+        // ADD r 
+        case ADD_A: add(cpu, cpu->a, WITHOUT_CARRY); break;
+        case ADD_B: add(cpu, cpu->b, WITHOUT_CARRY); break;
+        case ADD_C: add(cpu, cpu->c, WITHOUT_CARRY); break;
+        case ADD_D: add(cpu, cpu->d, WITHOUT_CARRY); break;
+        case ADD_E: add(cpu, cpu->e, WITHOUT_CARRY); break;
+        case ADD_H: add(cpu, cpu->h, WITHOUT_CARRY); break;
+        case ADD_L: add(cpu, cpu->l, WITHOUT_CARRY); break;
+        // ADD M
+        case ADD_M: add(cpu, get_m(cpu), WITHOUT_CARRY); break;
+        // ADI data
+        case ADI_D8: add(cpu, DATA8, WITHOUT_CARRY); break;
+        // ADC r
+        case ADC_A: add(cpu, cpu->a, WITH_CARRY); break;
+        case ADC_B: add(cpu, cpu->b, WITH_CARRY); break;
+        case ADC_C: add(cpu, cpu->c, WITH_CARRY); break;
+        case ADC_D: add(cpu, cpu->d, WITH_CARRY); break;
+        case ADC_E: add(cpu, cpu->e, WITH_CARRY); break;
+        case ADC_H: add(cpu, cpu->h, WITH_CARRY); break;
+        case ADC_L: add(cpu, cpu->l, WITH_CARRY); break;
+        // ADC M
+        case ADC_M: add(cpu, get_m(cpu), WITH_CARRY); break;
+        // ACI data
+        case ADC_D8: add(cpu, DATA8, WITH_CARRY); break;
     }
 }
+
+#define SET(F, COND) cpu->f.F = COND;
+#define BIT(V, B) ((V) >> (B) & 1) 
+
+static void add(i8080_cpu_t* cpu, uint8_t val, bool c) {
+    uint16_t res = cpu->a + val + c;
+    SET(z, res == 0);
+    SET(s, BIT(res, 7));
+    SET(p, PARITY[res]);
+    SET(cy, BIT(res, 8));
+    SET(ac, BIT(cpu->a & val, 3));
+    cpu->a = res & 0xFF;
+}
+
+static void sub(i8080_cpu_t* cpu, uint8_t val, bool b) {
+    uint16_t res = cpu->a - val - b;
+    SET(z, res == 0);
+    SET(s, BIT(res, 7));
+    SET(p, PARITY[res]);
+    SET(cy, BIT(res, 8));
+    SET(ac, BIT(cpu->a & val, 3));
+    cpu->a = res & 0xFF;
+}
+
+#undef SET
+#undef BIT
 
 #undef CONCAT
 #undef LSB
