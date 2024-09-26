@@ -25,25 +25,43 @@ void i8080_init(i8080_cpu_t* cpu,
 }
 
 void i8080_debug(i8080_cpu_t* cpu) {
+    static int callnum = 1;
+    printf("\n Debug Call #%d \n", callnum);
     printf("\n Registers: \n");
     printf("\t A: %.2x");
-    printf("B: %.2x");
-    printf("C: %.2x");
-    printf("D: %.2x");
-    printf("E: %.2x");
-    printf("H: %.2x");
-    printf("L: %.2x");
+    printf("B: %.2x", cpu->b);
+    printf("C: %.2x", cpu->c);
+    printf("D: %.2x", cpu->d);
+    printf("E: %.2x", cpu->e);
+    printf("H: %.2x", cpu->h);
+    printf("L: %.2x \n", cpu->l);
+    printf("\t M: %.2x", get_m(cpu));
     printf("\n Register Pairs: \n");
-    printf("\t PSW: %.4x", cpu->psw);
-    printf("BC: %.4x", cpu->bc);
+    printf("\t PC: %.4x \n", cpu->pc);
+    printf("\tBC: %.4x", cpu->bc);
     printf("DE: %.4x", cpu->de);
     printf("HL: %.4x", cpu->hl);
+    printf("SP: %.4x \n", cpu->sp);
+    printf("\t PSW: %.4x", cpu->psw);
     printf("\n Flags: \n");
+    printf("\t F: 0b%d", itoa(cpu->f, 2));
     printf("\t Z: %d", cpu->f.z);
     printf("S: %d", cpu->f.s);
     printf("P: %d", cpu->f.p);
     printf("CY: %d", cpu->f.cy);
     printf("AC: %d", cpu->f.ac);
+    callnum++;
+}
+
+void i8080_dump(i8080_cpu_t *cpu, uint8_t page) {
+    printf("Memory Dump of Page #%d", page);
+    uint16_t base = page * 0xFF;
+    for (int i=0; i<16; i++) {
+        printf("\n \t %.4x:", base + i * 16);
+        for (int j=0; j<16; j++) {
+            printf("%.2x", base + i * 16 + j);
+        }
+    }
 }
 
 static inline uint8_t get_m(i8080_cpu_t* cpu) {
