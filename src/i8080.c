@@ -227,7 +227,50 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // ADC M
         case ADC_M: add(cpu, get_m(cpu), WITH_CARRY); break;
         // ACI data
-        case ADC_D8: add(cpu, DATA8, WITH_CARRY); break;
+        case ACI_D8: add(cpu, DATA8, WITH_CARRY); break;
+        // SUB r
+        case SUB_A: sub(cpu, cpu->a, WITHOUT_BORROW); break;
+        case SUB_B: sub(cpu, cpu->b, WITHOUT_BORROW); break;
+        case SUB_C: sub(cpu, cpu->c, WITHOUT_BORROW); break;
+        case SUB_D: sub(cpu, cpu->d, WITHOUT_BORROW); break;
+        case SUB_E: sub(cpu, cpu->e, WITHOUT_BORROW); break;
+        case SUB_H: sub(cpu, cpu->h, WITHOUT_BORROW); break;
+        case SUB_L: sub(cpu, cpu->l, WITHOUT_BORROW); break;
+        // SUB M
+        case SUB_M: sub(cpu, get_m(cpu), WITHOUT_BORROW); break;
+        // SUI data
+        case SUI_D8: sub(cpu, DATA8, WITHOUT_BORROW); break;
+        // SBB r
+        case SBB_A: sub(cpu, cpu->a, WITH_BORROW); break;
+        case SBB_B: sub(cpu, cpu->b, WITH_BORROW); break;
+        case SBB_C: sub(cpu, cpu->c, WITH_BORROW); break;
+        case SBB_D: sub(cpu, cpu->d, WITH_BORROW); break;
+        case SBB_E: sub(cpu, cpu->e, WITH_BORROW); break;
+        case SBB_H: sub(cpu, cpu->h, WITH_BORROW); break;
+        case SBB_L: sub(cpu, cpu->l, WITH_BORROW); break;
+        // SBB M
+        case SBB_M: sub(cpu, get_m(cpu), WITH_BORROW); break;
+        // SBI data
+        case SBI_D8: sub(cpu, DATA8, WITH_BORROW); break;
+        // INR r
+        case INR_A: cpu->a = inr(cpu, cpu->a); break;
+        case INR_B: cpu->b = inr(cpu, cpu->b); break;
+        case INR_C: cpu->c = inr(cpu, cpu->c); break;
+        case INR_D: cpu->d = inr(cpu, cpu->d); break;
+        case INR_E: cpu->e = inr(cpu, cpu->e); break;
+        case INR_H: cpu->h = inr(cpu, cpu->h); break;
+        case INR_L: cpu->l = inr(cpu, cpu->h); break;
+        // INR_M
+        case INR_M: set_m(cpu, inr(cpu, get_m(cpu))); break;
+        
+        // ANA r
+        case ANA_A: and(cpu, cpu->a); break;
+        case ANA_B: and(cpu, cpu->b); break;
+        case ANA_C: and(cpu, cpu->c); break;
+        case ANA_D: and(cpu, cpu->d); break;
+        case ANA_E: and(cpu, cpu->e); break;
+        case ANA_H: and(cpu, cpu->h); break;
+        case ANA_L: and(cpu, cpu->l); break;
     }
 }
 
@@ -248,10 +291,19 @@ static void sub(i8080_cpu_t* cpu, uint8_t val, bool b) {
     uint16_t res = cpu->a - val - b;
     SET(z, res == 0);
     SET(s, BIT(res, 7));
-    SET(p, PARITY[res]);
+    SET(p, PARITY[res & 0xFF]);
     SET(cy, BIT(res, 8));
     SET(ac, BIT(cpu->a & val, 3));
     cpu->a = res & 0xFF;
+}
+
+static void and(i8080_cpu_t* cpu, uint8_t val) {
+    uint8_t res = cpu->a & val;
+    SET(z, res == 0);
+    SET(s, BIT(res, 7));
+    SET(p, PARITY[res]);
+    SET(cy, 0);
+    SET(ac, BIT(cpu->a & val, 3))
 }
 
 #undef SET
