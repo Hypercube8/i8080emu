@@ -379,8 +379,71 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case JP_A16:  if (P)  cpu->pc = ADDR16; break;
         case JM_A16:  if (M)  cpu->pc = ADDR16; break;
         // CALL A16
-        case CALL_A16: call(cpu, )
+        case CALL_A16: call(cpu, ADDR16); break;
         // Ccondition addr
+        case CNZ_A16: if (NZ) call(cpu, ADDR16); break;
+        case CZ_A16:  if (Z)  call(cpu, ADDR16); break;
+        case CNC_A16: if (NC) call(cpu, ADDR16); break;
+        case CC_A16:  if (C)  call(cpu, ADDR16); break;
+        case CPO_A16: if (PO) call(cpu, ADDR16); break;
+        case CPE_A16: if (PE) call(cpu, ADDR16); break;
+        case CP_A16:  if (P)  call(cpu, ADDR16); break;
+        case CM_A16:  if (M)  call(cpu, ADDR16); break;
+        // RET
+        case RET: ret(cpu); break;
+        // Rcondition 
+        case RNZ: if (NZ) ret(cpu); break;
+        case RZ:  if (Z)  ret(cpu); break;
+        case RNC: if (NC) ret(cpu); break;
+        case RC:  if (C)  ret(cpu); break;
+        case RPO: if (PO) ret(cpu); break;
+        case RPE: if (PE) ret(cpu); break;
+        case RP:  if (P)  ret(cpu); break;
+        case RM:  if (M)  ret(cpu); break;
+        // RST n
+        case RST_0: call(cpu, 0x0000); break;
+        case RST_1: call(cpu, 0x0008); break;
+        case RST_2: call(cpu, 0x0010); break;
+        case RST_3: call(cpu, 0x0018); break;
+        case RST_4: call(cpu, 0x0020); break;
+        case RST_5: call(cpu, 0x0028); break;
+        case RST_6: call(cpu, 0x0030); break;
+        case RST_7: call(cpu, 0x0038); break;
+        // PCHL
+        case PCHL: cpu->pc = cpu->hl; break;
+        // PUSH rp
+        case PUSH_B: push(cpu, cpu->bc); break;
+        case PUSH_D: push(cpu, cpu->de); break;
+        case PUSH_H: push(cpu, cpu->hl); break;
+        // PUSH PSW
+        case PUSH_PSW: push(cpu, cpu->psw); break;
+        // POP rp
+        case POP_B: cpu->bc = pop(cpu);
+        case POP_D: cpu->de = pop(cpu);
+        case POP_H: cpu->hl = pop(cpu);
+        // POP PSW
+        case POP_PSW: cpu->psw = pop(cpu);
+        // XTHL
+        case XTHL: {
+            uint16_t tmp = cpu->hl;
+            cpu->hl = read_word(cpu, cpu->sp);
+            write_word(cpu, cpu->sp, tmp);
+            break;
+        }
+        // SPHL
+        case SPHL: cpu->sp = cpu->hl; break;
+        // IN
+        case IN_D8: cpu->a = cpu->in_byte(PORT8); break;
+        // OUT
+        case OUT_D8: cpu->out_byte(PORT8, cpu->a); break;
+        // EI
+        case EI:
+        // DI
+        case DI:
+        // HLT
+        case HLT
+        // NOP
+        case NOP: break; 
     }
 }
 
@@ -439,6 +502,26 @@ static void and(i8080_cpu_t* cpu, uint8_t val) {
     SET(cy, 0);
     SET(ac, BIT(cpu->a & val, 3))
     cpu->a = res;
+}
+
+static inline void push(i8080_cpu_t *cpu, uint16_t val) {
+    write_word(cpu, cpu->sp-2, val);
+    cpu->sp -= 2;
+}
+
+static inline uint16_t pop(i8080_cpu_t *cpu) {
+    uint16_t val = read_word(cpu, cpu->sp);
+    cpu->sp += 2;
+    return val;
+}
+
+static void call(i8080_cpu_t *cpu, uint16_t addr) {
+    push(cpu, cpu->pc);
+    cpu->pc = addr;
+}
+
+static void ret(i8080_cpu_t *cpu) {
+    cpu->pc = pop(cpu);
 }
 
 #undef SET
