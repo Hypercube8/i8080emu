@@ -1,5 +1,8 @@
 #include "i8080.h"
 
+#define PORT8 fetch_byte(cpu)
+#define BIT(V, B) ((V) >> (B) & 1) 
+
 #define CONCAT(LO, HI) ((LO) | ((HI) << 8))
 #define LSB(WORD) ((WORD) & 0xFF)
 #define MSB(WORD) ((WORD) >> 8)
@@ -103,6 +106,25 @@ static inline void write_word(i8080_cpu_t* cpu, uint16_t addr, uint8_t val) {
     cpu->write_byte(addr, LSB(val));
     cpu->write_byte(addr+1, MSB(val));
 }
+
+static const uint8_t PARITY[] = {
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1
+};
 
 static void decode(i8080_cpu_t *cpu, instruction_t instr) {
     switch (instr) {
@@ -356,7 +378,12 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
             break;
         }
         // RRC
-        case RRC:
+        case RRC: {
+            bool lsb = BIT(cpu->a, 0);
+            cpu->a >>= 1;
+            cpu->a, cpu->f.cy = lsb;
+            break;
+        }
         // RAL
         case RAL:
         // RAR
@@ -437,71 +464,89 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // OUT
         case OUT_D8: cpu->out_byte(PORT8, cpu->a); break;
         // EI
-        case EI:
+        case EI: cpu->inte = true;
         // DI
-        case DI:
+        case DI: cpu->inte = false;
         // HLT
-        case HLT
+        case HLT: cpu->hlt = true;
         // NOP
         case NOP: break; 
     }
 }
 
-#define SET(F, COND) cpu->f.F = COND;
-#define BIT(V, B) ((V) >> (B) & 1) 
+#define SET_ZSP() do {      \
+    cpu->f.z = res == 0;    \
+    cpu->f.s = BIT(res, 7); \
+    cpu->f.p = PARITY[res]; \
+} while (0)
 
-static void add(i8080_cpu_t* cpu, uint8_t val, bool c) {
-    uint16_t res = cpu->a + val + c;
-    SET(z, res == 0);
-    SET(s, BIT(res, 7));
-    SET(p, PARITY[res]);
-    SET(cy, BIT(res, 8));
-    SET(ac, BIT(cpu->a & val, 3));
-    cpu->a = res & 0xFF;
+#define CARRY(A, B) BIT((A) ^ val ^ res, (B))
+
+static void add(i8080_cpu_t *cpu, uint8_t val, bool c) {
+    uint8_t res = cpu->a + val + c;
+    SET_ZSP();
+    cpu->f.cy = CARRY(cpu->a, 7);
+    cpu->f.ac = CARRY(cpu->a, 3);
+    cpu->a = res;
 }
 
 static void sub(i8080_cpu_t* cpu, uint8_t val, bool b) {
-    uint16_t res = cpu->a - val - b;
-    SET(z, res == 0);
-    SET(s, BIT(res, 7));
-    SET(p, PARITY[res & 0xFF]);
-    SET(cy, BIT(res, 8));
-    SET(ac, BIT(cpu->a & val, 3));
-    cpu->a = res & 0xFF;
+    uint8_t res = cpu->a - val - b;
+    SET_ZSP();
+    cpu->f.cy = CARRY(cpu->a, 7);
+    cpu->f.ac = CARRY(cpu->a, 3);
+    cpu->a = res;
 }
 
 static uint8_t inc(i8080_cpu_t* cpu, uint8_t val) {
     uint8_t res = val++;
-    SET(z, res == 0);
-    SET(s, BIT(res, 7));
-    SET(p, PARITY[res]);
-    SET(ac, );
+    SET_ZSP();
+    cpu->f.ac = CARRY(cpu->a, 3);
     return res; 
 }
 
 static uint8_t dec(i8080_cpu_t* cpu, uint8_t val) {
     uint8_t res = val--;
-    SET(z, res == 0);
-    SET(s, BIT(res, 7));
-    SET(p, PARITY[res]);
-    SET(ac, );
+    SET_ZSP();
+    cpu->f.ac = CARRY(cpu->a, 3);
     return res; 
 }
 
 static void dad(i8080_cpu_t* cpu, uint16_t val) {
-    uint32_t res = cpu->hl + val;
-    SET(cy, BIT(res, 16));
+    uint16_t res = cpu->hl + val;
+    cpu->f.cy = CARRY(cpu->hl, 15);
     cpu->hl = res & 0xFFFF;
 }
 
 static void and(i8080_cpu_t* cpu, uint8_t val) {
     uint8_t res = cpu->a & val;
-    SET(z, res == 0);
-    SET(s, BIT(res, 7));
-    SET(p, PARITY[res]);
-    SET(cy, 0);
-    SET(ac, BIT(cpu->a & val, 3))
+    SET_ZSP();
+    cpu->f.cy = 0;
+    cpu->f.ac = 0;
     cpu->a = res;
+}
+
+static void xor(i8080_cpu_t *cpu, uint8_t val) {
+    uint8_t res = cpu->a ^ val;
+    SET_ZSP();
+    cpu->f.cy = 0;
+    cpu->f.ac = 0;
+    cpu->a = res;
+}
+
+static void or(i8080_cpu_t *cpu, uint8_t val) {
+    uint8_t res = cpu->a | val;
+    SET_ZSP();
+    cpu->f.cy = 0;
+    cpu->f.ac = 0;
+    cpu->a = res;
+}
+
+static void cmp(i8080_cpu_t *cpu, uint8_t val) {
+    uint8_t res = cpu->a - val;
+    SET_ZSP();
+    cpu->f.cy = CARRY(cpu->a, 7);
+    cpu->f.ac = CARRY(cpu->a, 3);
 }
 
 static inline void push(i8080_cpu_t *cpu, uint16_t val) {
@@ -524,7 +569,6 @@ static void ret(i8080_cpu_t *cpu) {
     cpu->pc = pop(cpu);
 }
 
-#undef SET
 #undef BIT
 
 #undef CONCAT
