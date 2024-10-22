@@ -289,8 +289,14 @@ typedef struct {
     uint16_t pc;
     uint16_t sp;
 
+    bool pending;
     bool inte;
+    bool delay;
+    uint8_t vec;
+    
     bool hlt;
+
+    uint8_t cycles;
 
     i8080_reader_t read_byte;
     i8080_writer_t write_byte;

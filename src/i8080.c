@@ -1,17 +1,15 @@
 #include "i8080.h"
 
-#define PORT8 fetch_byte(cpu)
 #define BIT(V, B) ((V) >> (B) & 1) 
-
 #define CONCAT(LO, HI) ((LO) | ((HI) << 8))
-#define LSB(WORD) ((WORD) & 0xFF)
-#define MSB(WORD) ((WORD) >> 8)
+#define LO(WORD) ((WORD) & 0xFF)
+#define HI(WORD) ((WORD) >> 8)
 
-#define DATA8 fetch_byte(cpu)
-#define DATA16 fetch_word(cpu)
-#define ADDR16 fetch_word(cpu)
+#define WITH_CARRY cpu->f.cy
+#define WITHOUT_CARRY 0
 
-#define M get_m(cpu)
+#define WITH_BORROW cpu->f.cy
+#define WITHOUT_BORROW 0
 
 #define NZ !cpu->f.z
 #define Z cpu->f.z
@@ -21,6 +19,14 @@
 #define PE cpu->f.p
 #define P !cpu->f.s
 #define M cpu->f.s
+
+#define SET_ZSP() do {      \
+    cpu->f.z = res == 0;    \
+    cpu->f.s = BIT(res, 7); \
+    cpu->f.p = PARITY[res]; \
+} while (0)
+
+#define CARRY(A, B) BIT((A) ^ val ^ res, (B))
 
 void i8080_init(i8080_cpu_t* cpu, 
                 i8080_reader_t* rb, 
@@ -78,14 +84,6 @@ void i8080_dump(i8080_cpu_t *cpu, uint8_t page) {
     }
 }
 
-static inline uint8_t get_m(i8080_cpu_t* cpu) {
-    return cpu->read_byte(cpu->hl);
-}
-
-static inline void set_m(i8080_cpu_t* cpu, uint8_t val) {
-    cpu->write_byte(cpu->hl, val);
-}
-
 static inline uint8_t fetch_byte(i8080_cpu_t* cpu) {
     return cpu->read_byte(cpu->pc++);
 }
@@ -103,8 +101,16 @@ static inline uint16_t read_word(i8080_cpu_t* cpu, uint16_t addr) {
 }
 
 static inline void write_word(i8080_cpu_t* cpu, uint16_t addr, uint8_t val) {
-    cpu->write_byte(addr, LSB(val));
-    cpu->write_byte(addr+1, MSB(val));
+    cpu->write_byte(addr, LO(val));
+    cpu->write_byte(addr+1, HI(val));
+}
+
+static inline uint8_t get_m(i8080_cpu_t* cpu) {
+    return cpu->read_byte(cpu->hl);
+}
+
+static inline void set_m(i8080_cpu_t* cpu, uint8_t val) {
+    cpu->write_byte(cpu->hl, val);
 }
 
 static const uint8_t PARITY[] = {
@@ -125,6 +131,44 @@ static const uint8_t PARITY[] = {
     0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
     1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1
 };
+
+static const uint8_t CYCLES[] = {
+    4, 10,7, 5, 5, 5, 7, 4, 4, 10,7, 5, 5, 5, 7, 4,
+	4, 10,7, 5, 5, 5, 7, 4, 4, 10,7, 5, 5, 5, 7, 4, 
+	4, 10,16,5, 5, 5, 7, 4, 4, 10,16,5, 5, 5, 7, 4,
+	4, 10,13,5, 10,10,10,4, 4, 10,13,5, 5, 5, 7, 4,
+	5, 5, 5, 5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 7, 5, 
+	5, 5, 5, 5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 7, 5,
+	5, 5, 5, 5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 7, 5,
+	7, 7, 7, 7, 7, 7, 7, 7, 5, 5, 5, 5, 5, 5, 7, 5,
+	4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4,
+	4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4,
+	4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4,
+	4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4,
+	11,10,10,10,17,11,7, 11,11,10,10,10,10,17,7,11, 
+	11,10,10,10,17,11,7, 11,11,10,10,10,10,17,7,11,
+	11,10,10,18,17,11,7, 11,11,5, 10,5, 17,17,7,11,
+	11,10,10,4, 17,11,7, 11,11,5, 10,4, 17,17,7,11,
+};
+
+void i8080_step(i8080_cpu_t *cpu) {
+    if (cpu->inte && cpu->pending && cpu->delay == 0) {
+        cpu->pending = false;
+        cpu->hlt = false;
+        decode(cpu, cpu->vec);
+    } else if (cpu->hlt) {
+        printf("CPU is halted");
+    } else if (!cpu->hlt) {
+        uint8_t opcode = fetch_byte(cpu);
+        cpu->cycles += CYCLES[opcode];
+        decode(cpu, opcode);
+    }
+}
+
+void i8080_interrupt(i8080_cpu_t *cpu, instruction_t instr) {
+    cpu->pending = true;
+    cpu->vec = instr;
+}
 
 static void decode(i8080_cpu_t *cpu, instruction_t instr) {
     switch (instr) {
@@ -195,28 +239,28 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case MOV_M_H: set_m(cpu, cpu->h); break;
         case MOV_M_L: set_m(cpu, cpu->l); break;
         // MVI r, data
-        case MVI_A_D8: cpu->a = DATA8; break;
-        case MVI_B_D8: cpu->b = DATA8; break;
-        case MVI_C_D8: cpu->c = DATA8; break;
-        case MVI_D_D8: cpu->d = DATA8; break;
-        case MVI_E_D8: cpu->e = DATA8; break;
-        case MVI_H_D8: cpu->h = DATA8; break;
-        case MVI_L_D8: cpu->l = DATA8; break;
+        case MVI_A_D8: cpu->a = fetch_byte(cpu); break;
+        case MVI_B_D8: cpu->b = fetch_byte(cpu); break;
+        case MVI_C_D8: cpu->c = fetch_byte(cpu); break;
+        case MVI_D_D8: cpu->d = fetch_byte(cpu); break;
+        case MVI_E_D8: cpu->e = fetch_byte(cpu); break;
+        case MVI_H_D8: cpu->h = fetch_byte(cpu); break;
+        case MVI_L_D8: cpu->l = fetch_byte(cpu); break;
         // MVI M, data
-        case MVI_M_D8: set_m(cpu, DATA8); break;
+        case MVI_M_D8: set_m(cpu, fetch_byte(cpu)); break;
         // LXI rp, data 16
-        case LXI_B_D16:  cpu->bc = DATA16;
-        case LXI_D_D16:  cpu->de = DATA16;
-        case LXI_H_D16:  cpu->hl = DATA16;
-        case LXI_SP_D16: cpu->sp = DATA16;
+        case LXI_B_D16:  cpu->bc = fetch_word(cpu);
+        case LXI_D_D16:  cpu->de = fetch_word(cpu);
+        case LXI_H_D16:  cpu->hl = fetch_word(cpu);
+        case LXI_SP_D16: cpu->sp = fetch_word(cpu);
         // LDA addr
-        case LDA_A16: cpu->a = cpu->read_byte(ADDR16); break;
+        case LDA_A16: cpu->a = cpu->read_byte(fetch_word(cpu)); break;
         // STA addr
-        case STA_A16: cpu->write_byte(ADDR16, cpu->a); break; 
+        case STA_A16: cpu->write_byte(fetch_word(cpu), cpu->a); break; 
         // LHLD addr
-        case LHLD_A16: cpu->hl = read_word(cpu, ADDR16); break;
+        case LHLD_A16: cpu->hl = read_word(cpu, fetch_word(cpu)); break;
         // SHLD addr
-        case SHLD_A16: write_word(cpu, ADDR16, cpu->hl); break;
+        case SHLD_A16: write_word(cpu, fetch_word(cpu), cpu->hl); break;
         // LDAX rp
         case LDAX_B: cpu->a = cpu->read_byte(cpu->bc); break;
         case LDAX_D: cpu->a = cpu->read_byte(cpu->de); break;
@@ -224,19 +268,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case STAX_B: cpu->write_byte(cpu->bc, cpu->a); break;
         case STAX_D: cpu->write_byte(cpu->de, cpu->a); break;
         // XCHG
-        case XCHG: {
-            uint8_t tmp = cpu->de;
-            cpu->de = cpu->hl;
-            cpu->hl = tmp;
-            break;
-        }
-
-        #define WITH_CARRY cpu->f.cy
-        #define WITHOUT_CARRY 0
-
-        #define WITH_BORROW cpu->f.cy
-        #define WITHOUT_BORROW 0
-
+        case XCHG: xchg(cpu); break;
         // ADD r 
         case ADD_A: add(cpu, cpu->a, WITHOUT_CARRY); break;
         case ADD_B: add(cpu, cpu->b, WITHOUT_CARRY); break;
@@ -248,7 +280,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // ADD M
         case ADD_M: add(cpu, get_m(cpu), WITHOUT_CARRY); break;
         // ADI data
-        case ADI_D8: add(cpu, DATA8, WITHOUT_CARRY); break;
+        case ADI_D8: add(cpu, fetch_byte(cpu), WITHOUT_CARRY); break;
         // ADC r
         case ADC_A: add(cpu, cpu->a, WITH_CARRY); break;
         case ADC_B: add(cpu, cpu->b, WITH_CARRY); break;
@@ -260,7 +292,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // ADC M
         case ADC_M: add(cpu, get_m(cpu), WITH_CARRY); break;
         // ACI data
-        case ACI_D8: add(cpu, DATA8, WITH_CARRY); break;
+        case ACI_D8: add(cpu, fetch_byte(cpu), WITH_CARRY); break;
         // SUB r
         case SUB_A: sub(cpu, cpu->a, WITHOUT_BORROW); break;
         case SUB_B: sub(cpu, cpu->b, WITHOUT_BORROW); break;
@@ -272,7 +304,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // SUB M
         case SUB_M: sub(cpu, get_m(cpu), WITHOUT_BORROW); break;
         // SUI data
-        case SUI_D8: sub(cpu, DATA8, WITHOUT_BORROW); break;
+        case SUI_D8: sub(cpu, fetch_byte(cpu), WITHOUT_BORROW); break;
         // SBB r
         case SBB_A: sub(cpu, cpu->a, WITH_BORROW); break;
         case SBB_B: sub(cpu, cpu->b, WITH_BORROW); break;
@@ -284,7 +316,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // SBB M
         case SBB_M: sub(cpu, get_m(cpu), WITH_BORROW); break;
         // SBI data
-        case SBI_D8: sub(cpu, DATA8, WITH_BORROW); break;
+        case SBI_D8: sub(cpu, fetch_byte(cpu), WITH_BORROW); break;
         // INR r
         case INR_A: cpu->a = inc(cpu, cpu->a); break;
         case INR_B: cpu->b = inc(cpu, cpu->b); break;
@@ -321,7 +353,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case DAD_H:  dad(cpu, cpu->hl); break;
         case DAD_SP: dad(cpu, cpu->sp); break;
         // DAA
-        case DAA: 
+        case DAA: daa(cpu); break; 
         // ANA r
         case ANA_A: and(cpu, cpu->a); break;
         case ANA_B: and(cpu, cpu->b); break;
@@ -333,7 +365,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // ANA M
         case ANA_M: and(cpu, M); break;
         // ANI data
-        case ANI_D8: and(cpu, DATA8); break;
+        case ANI_D8: and(cpu, fetch_byte(cpu)); break;
         // XRA r
         case XRA_A: xor(cpu, cpu->a); break;
         case XRA_B: xor(cpu, cpu->b); break;
@@ -345,7 +377,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // XRA M
         case XRA_M: xor(cpu, M); break;
         // XRI data
-        case XRI_D8: xor(cpu, DATA8); break;
+        case XRI_D8: xor(cpu, fetch_byte(cpu)); break;
         // ORA r
         case ORA_A: or(cpu, cpu->a); break;
         case ORA_B: or(cpu, cpu->b); break;
@@ -357,7 +389,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // ORA M
         case ORA_M: or(cpu, M); break;
         // ORI data
-        case ORI_D8: or(cpu, DATA8); break;
+        case ORI_D8: or(cpu, fetch_byte(cpu)); break;
         // CMP r
         case CMP_A: cmp(cpu, cpu->a); break;
         case CMP_B: cmp(cpu, cpu->b); break;
@@ -369,25 +401,15 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // CMP M
         case CMP_M: cmp(cpu, M); break;
         // CMP data
-        case CPI_D8: cmp(cpu, DATA8); break;
+        case CPI_D8: cmp(cpu, fetch_byte(cpu)); break;
+        // RLC
+        case RLC: rlc(cpu); break; 
         // RRC
-        case RLC: {
-            bool msb = BIT(cpu->a, 7);
-            cpu->a <<= 1;
-            cpu->a, cpu->f.cy = msb;
-            break;
-        }
-        // RRC
-        case RRC: {
-            bool lsb = BIT(cpu->a, 0);
-            cpu->a >>= 1;
-            cpu->a, cpu->f.cy = lsb;
-            break;
-        }
+        case RRC: rrc(cpu); break;
         // RAL
-        case RAL:
+        case RAL: ral(cpu); break;
         // RAR
-        case RAR:
+        case RAR: rar(cpu); break;
         // CMA
         case CMA: cpu->a = ~cpu->a; break;
         // CMC
@@ -395,27 +417,27 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // STC
         case STC: cpu->f.cy = 1; break;
         // JMP addr
-        case JMP_A16: cpu->pc = ADDR16; break;
+        case JMP_A16: cpu->pc = fetch_word(cpu); break;
         // Jcondition addr
-        case JNZ_A16: if (NZ) cpu->pc = ADDR16; break; 
-        case JZ_A16:  if (Z)  cpu->pc = ADDR16; break;
-        case JNC_A16: if (NC) cpu->pc = ADDR16; break;
-        case JC_A16:  if (C)  cpu->pc = ADDR16; break;
-        case JPO_A16: if (PO) cpu->pc = ADDR16; break;
-        case JPE_A16: if (PE) cpu->pc = ADDR16; break;
-        case JP_A16:  if (P)  cpu->pc = ADDR16; break;
-        case JM_A16:  if (M)  cpu->pc = ADDR16; break;
+        case JNZ_A16: if (NZ) cpu->pc = fetch_word(cpu); break; 
+        case JZ_A16:  if (Z)  cpu->pc = fetch_word(cpu); break;
+        case JNC_A16: if (NC) cpu->pc = fetch_word(cpu); break;
+        case JC_A16:  if (C)  cpu->pc = fetch_word(cpu); break;
+        case JPO_A16: if (PO) cpu->pc = fetch_word(cpu); break;
+        case JPE_A16: if (PE) cpu->pc = fetch_word(cpu); break;
+        case JP_A16:  if (P)  cpu->pc = fetch_word(cpu); break;
+        case JM_A16:  if (M)  cpu->pc = fetch_word(cpu); break;
         // CALL A16
-        case CALL_A16: call(cpu, ADDR16); break;
+        case CALL_A16: call(cpu, fetch_word(cpu)); break;
         // Ccondition addr
-        case CNZ_A16: if (NZ) call(cpu, ADDR16); break;
-        case CZ_A16:  if (Z)  call(cpu, ADDR16); break;
-        case CNC_A16: if (NC) call(cpu, ADDR16); break;
-        case CC_A16:  if (C)  call(cpu, ADDR16); break;
-        case CPO_A16: if (PO) call(cpu, ADDR16); break;
-        case CPE_A16: if (PE) call(cpu, ADDR16); break;
-        case CP_A16:  if (P)  call(cpu, ADDR16); break;
-        case CM_A16:  if (M)  call(cpu, ADDR16); break;
+        case CNZ_A16: if (NZ) call(cpu, fetch_word(cpu)); break;
+        case CZ_A16:  if (Z)  call(cpu, fetch_word(cpu)); break;
+        case CNC_A16: if (NC) call(cpu, fetch_word(cpu)); break;
+        case CC_A16:  if (C)  call(cpu, fetch_word(cpu)); break;
+        case CPO_A16: if (PO) call(cpu, fetch_word(cpu)); break;
+        case CPE_A16: if (PE) call(cpu, fetch_word(cpu)); break;
+        case CP_A16:  if (P)  call(cpu, fetch_word(cpu)); break;
+        case CM_A16:  if (M)  call(cpu, fetch_word(cpu)); break;
         // RET
         case RET: ret(cpu); break;
         // Rcondition 
@@ -451,20 +473,15 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // POP PSW
         case POP_PSW: cpu->psw = pop(cpu);
         // XTHL
-        case XTHL: {
-            uint16_t tmp = cpu->hl;
-            cpu->hl = read_word(cpu, cpu->sp);
-            write_word(cpu, cpu->sp, tmp);
-            break;
-        }
+        case XTHL: xthl(cpu); break;
         // SPHL
         case SPHL: cpu->sp = cpu->hl; break;
         // IN
-        case IN_D8: cpu->a = cpu->in_byte(PORT8); break;
+        case IN_D8: cpu->a = cpu->in_byte(fetch_byte(cpu)); break;
         // OUT
-        case OUT_D8: cpu->out_byte(PORT8, cpu->a); break;
+        case OUT_D8: cpu->out_byte(fetch_byte(cpu), cpu->a); break;
         // EI
-        case EI: cpu->inte = true;
+        case EI: cpu->delay = 1; cpu->inte = true; break;
         // DI
         case DI: cpu->inte = false;
         // HLT
@@ -474,13 +491,55 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
     }
 }
 
-#define SET_ZSP() do {      \
-    cpu->f.z = res == 0;    \
-    cpu->f.s = BIT(res, 7); \
-    cpu->f.p = PARITY[res]; \
-} while (0)
+static void daa(i8080_cpu_t *cpu) {
+    if (cpu->a & 0xF > 9 || cpu->f.ac) {
+        add(cpu, 0x6, WITHOUT_CARRY);
+    }
 
-#define CARRY(A, B) BIT((A) ^ val ^ res, (B))
+    if (cpu->a >> 4 > 9 || cpu->f.cy) {
+        add(cpu, 0x60, WITHOUT_CARRY);
+    }
+}
+
+static void xchg(i8080_cpu_t *cpu) {
+    uint8_t tmp = cpu->de;
+    cpu->de = cpu->hl;
+    cpu->hl = tmp;
+}
+
+static void xthl(i8080_cpu_t *cpu) {
+    uint16_t tmp = cpu->hl;
+    cpu->hl = read_word(cpu, cpu->sp);
+    write_word(cpu, cpu->sp, tmp);
+}
+
+static void rlc(i8080_cpu_t *cpu) {
+    bool msb = BIT(cpu->a, 7);
+    cpu->a <<= 1;
+    cpu->a |= msb;
+    cpu->f.cy = msb;
+}
+
+static void rrc(i8080_cpu_t *cpu) {
+    bool lsb = BIT(cpu->a, 0);
+    cpu->a >>= 1;
+    cpu->a |= lsb >> 7;
+    cpu->f.cy = lsb;
+}
+
+static void ral(i8080_cpu_t *cpu) {
+    bool msb = BIT(cpu->a, 7);
+    cpu->a <<= 1;
+    cpu->a |= cpu->f.cy;
+    cpu->f.cy = msb;
+}
+
+static void rar(i8080_cpu_t *cpu) {
+    bool lsb = BIT(cpu->a, 0);
+    cpu->a >>= 1;
+    cpu->a |= cpu->f.cy >> 7;
+    cpu->f.cy = lsb;
+}
 
 static void add(i8080_cpu_t *cpu, uint8_t val, bool c) {
     uint8_t res = cpu->a + val + c;
@@ -515,7 +574,7 @@ static uint8_t dec(i8080_cpu_t* cpu, uint8_t val) {
 static void dad(i8080_cpu_t* cpu, uint16_t val) {
     uint16_t res = cpu->hl + val;
     cpu->f.cy = CARRY(cpu->hl, 15);
-    cpu->hl = res & 0xFFFF;
+    cpu->hl = res;
 }
 
 static void and(i8080_cpu_t* cpu, uint8_t val) {
@@ -570,11 +629,24 @@ static void ret(i8080_cpu_t *cpu) {
 }
 
 #undef BIT
-
+#undef LO
+#undef HI
 #undef CONCAT
-#undef LSB
-#undef MSB
 
-#undef IMM8
-#undef IMM16
-#undef ADDR16
+#undef WITH_CARRY
+#undef WITHOUT_CARRY
+
+#undef WITH_BORROW
+#undef WITHOUT_BORROW
+
+#undef NZ
+#undef Z 
+#undef NC 
+#undef C 
+#undef PO 
+#undef PE 
+#undef P 
+#undef M 
+
+#undef SET_ZSP
+#undef CARRY
