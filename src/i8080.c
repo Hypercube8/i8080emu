@@ -26,17 +26,29 @@
     cpu->f.p = PARITY[res]; \
 } while (0)
 
-#define CARRY(A, B) BIT((A) ^ val ^ res, (B))
+#define CARRY(A, B) BIT(res ^ (A) ^ val, (B))
 
 void i8080_init(i8080_cpu_t* cpu, 
-                i8080_reader_t* rb, 
-                i8080_output_t* wb, 
-                i8080_input_t* inb, 
-                i8080_output_t* outb) {
+                i8080_reader_t rb, 
+                i8080_writer_t wb, 
+                i8080_input_t inb, 
+                i8080_output_t outb) {
     cpu->psw = 0x0004;
     cpu->bc  = 0x0000;
     cpu->de  = 0x0000;
     cpu->hl  = 0x0000;
+
+    cpu->pc = 0x0000;
+    cpu->sp = 0x0000;
+
+    cpu->pending = false;
+    cpu->inte = true;
+    cpu->delay = 0;
+    cpu->vec = 0;
+
+    cpu->hlt = false;
+
+    cpu->cycles = 0;
 
     cpu->read_byte  = rb;
     cpu->write_byte = wb;
@@ -44,32 +56,40 @@ void i8080_init(i8080_cpu_t* cpu,
     cpu->out_byte   = outb;
 }
 
+static inline uint8_t get_m(i8080_cpu_t* cpu) {
+    return cpu->read_byte(cpu->hl);
+}
+
+static inline void set_m(i8080_cpu_t* cpu, uint8_t val) {
+    cpu->write_byte(cpu->hl, val);
+}
+
 void i8080_debug(i8080_cpu_t* cpu) {
     static int callnum = 1;
     printf("\n Debug Call #%d \n", callnum);
     printf("\n Registers: \n");
-    printf("\t A: %.2x");
-    printf("B: %.2x", cpu->b);
-    printf("C: %.2x", cpu->c);
-    printf("D: %.2x", cpu->d);
-    printf("E: %.2x", cpu->e);
-    printf("H: %.2x", cpu->h);
-    printf("L: %.2x \n", cpu->l);
+    printf("\t A: %.2x", cpu->a);
+    printf(" B: %.2x", cpu->b);
+    printf(" C: %.2x", cpu->c);
+    printf(" D: %.2x", cpu->d);
+    printf(" E: %.2x", cpu->e);
+    printf(" H: %.2x", cpu->h);
+    printf(" L: %.2x \n", cpu->l);
     printf("\t M: %.2x", get_m(cpu));
     printf("\n Register Pairs: \n");
     printf("\t PC: %.4x \n", cpu->pc);
-    printf("\tBC: %.4x", cpu->bc);
-    printf("DE: %.4x", cpu->de);
-    printf("HL: %.4x", cpu->hl);
-    printf("SP: %.4x \n", cpu->sp);
+    printf("\t BC: %.4x", cpu->bc);
+    printf(" DE: %.4x", cpu->de);
+    printf(" HL: %.4x", cpu->hl);
+    printf(" SP: %.4x \n", cpu->sp);
     printf("\t PSW: %.4x", cpu->psw);
     printf("\n Flags: \n");
-    printf("\t F: 0b%d", itoa(cpu->f, 2));
+    printf("\t F: %d \n", cpu->psw & 0xFF);
     printf("\t Z: %d", cpu->f.z);
-    printf("S: %d", cpu->f.s);
-    printf("P: %d", cpu->f.p);
-    printf("CY: %d", cpu->f.cy);
-    printf("AC: %d", cpu->f.ac);
+    printf(" S: %d", cpu->f.s);
+    printf(" P: %d", cpu->f.p);
+    printf(" CY: %d", cpu->f.cy);
+    printf(" AC: %d", cpu->f.ac);
     callnum++;
 }
 
@@ -77,9 +97,9 @@ void i8080_dump(i8080_cpu_t *cpu, uint8_t page) {
     printf("Memory Dump of Page #%d", page);
     uint16_t base = page * 0xFF;
     for (int i=0; i<16; i++) {
-        printf("\n \t %.4x:", base + i * 16);
+        printf("\n \t %.4x: ", base + i * 16);
         for (int j=0; j<16; j++) {
-            printf("%.2x", base + i * 16 + j);
+            printf("%.2x ", cpu->read_byte(base + i * 16 + j));
         }
     }
 }
@@ -103,14 +123,6 @@ static inline uint16_t read_word(i8080_cpu_t* cpu, uint16_t addr) {
 static inline void write_word(i8080_cpu_t* cpu, uint16_t addr, uint8_t val) {
     cpu->write_byte(addr, LO(val));
     cpu->write_byte(addr+1, HI(val));
-}
-
-static inline uint8_t get_m(i8080_cpu_t* cpu) {
-    return cpu->read_byte(cpu->hl);
-}
-
-static inline void set_m(i8080_cpu_t* cpu, uint8_t val) {
-    cpu->write_byte(cpu->hl, val);
 }
 
 static const uint8_t PARITY[] = {
@@ -151,23 +163,146 @@ static const uint8_t CYCLES[] = {
 	11,10,10,4, 17,11,7, 11,11,5, 10,4, 17,17,7,11,
 };
 
-void i8080_step(i8080_cpu_t *cpu) {
-    if (cpu->inte && cpu->pending && cpu->delay == 0) {
-        cpu->pending = false;
-        cpu->hlt = false;
-        decode(cpu, cpu->vec);
-    } else if (cpu->hlt) {
-        printf("CPU is halted");
-    } else if (!cpu->hlt) {
-        uint8_t opcode = fetch_byte(cpu);
-        cpu->cycles += CYCLES[opcode];
-        decode(cpu, opcode);
-    }
-}
-
 void i8080_interrupt(i8080_cpu_t *cpu, instruction_t instr) {
     cpu->pending = true;
     cpu->vec = instr;
+}
+
+static void xchg(i8080_cpu_t *cpu) {
+    uint8_t tmp = cpu->de;
+    cpu->de = cpu->hl;
+    cpu->hl = tmp;
+}
+
+static void xthl(i8080_cpu_t *cpu) {
+    uint16_t tmp = cpu->hl;
+    cpu->hl = read_word(cpu, cpu->sp);
+    write_word(cpu, cpu->sp, tmp);
+}
+
+static void rlc(i8080_cpu_t *cpu) {
+    bool msb = BIT(cpu->a, 7);
+    cpu->a <<= 1;
+    cpu->a |= msb;
+    cpu->f.cy = msb;
+}
+
+static void rrc(i8080_cpu_t *cpu) {
+    bool lsb = BIT(cpu->a, 0);
+    cpu->a >>= 1;
+    cpu->a |= lsb >> 7;
+    cpu->f.cy = lsb;
+}
+
+static void ral(i8080_cpu_t *cpu) {
+    bool msb = BIT(cpu->a, 7);
+    cpu->a <<= 1;
+    cpu->a |= cpu->f.cy;
+    cpu->f.cy = msb;
+}
+
+static void rar(i8080_cpu_t *cpu) {
+    bool lsb = BIT(cpu->a, 0);
+    cpu->a >>= 1;
+    cpu->a |= cpu->f.cy >> 7;
+    cpu->f.cy = lsb;
+}
+
+static void add(i8080_cpu_t *cpu, uint8_t val, bool c) {
+    uint16_t res = cpu->a + val + c;
+    SET_ZSP();
+    cpu->f.cy = CARRY(cpu->a, 8);
+    cpu->f.ac = CARRY(cpu->a, 4);
+    cpu->a = res;
+}
+
+static void sub(i8080_cpu_t* cpu, uint8_t val, bool b) {
+    uint16_t res = cpu->a - val - b;
+    SET_ZSP();
+    cpu->f.cy = CARRY(cpu->a, 8);
+    cpu->f.ac = CARRY(cpu->a, 4);
+    cpu->a = res;
+}
+
+static uint8_t inc(i8080_cpu_t* cpu, uint8_t val) {
+    uint16_t res = val++;
+    SET_ZSP();
+    cpu->f.ac = CARRY(cpu->a, 4);
+    return res; 
+}
+
+static uint8_t dec(i8080_cpu_t* cpu, uint8_t val) {
+    uint16_t res = val--;
+    SET_ZSP();
+    cpu->f.ac = CARRY(cpu->a, 4);
+    return res; 
+}
+
+static void dad(i8080_cpu_t* cpu, uint16_t val) {
+    uint32_t res = cpu->hl + val;
+    cpu->f.cy = CARRY(cpu->hl, 16);
+    cpu->hl = res;
+}
+
+static void and(i8080_cpu_t* cpu, uint8_t val) {
+    uint8_t res = cpu->a & val;
+    SET_ZSP();
+    cpu->f.cy = 0;
+    cpu->f.ac = 0;
+    cpu->a = res;
+}
+
+static void xor(i8080_cpu_t *cpu, uint8_t val) {
+    uint8_t res = cpu->a ^ val;
+    SET_ZSP();
+    cpu->f.cy = 0;
+    cpu->f.ac = 0;
+    cpu->a = res;
+}
+
+static void or(i8080_cpu_t *cpu, uint8_t val) {
+    uint8_t res = cpu->a | val;
+    SET_ZSP();
+    cpu->f.cy = 0;
+    cpu->f.ac = 0;
+    cpu->a = res;
+}
+
+static void cmp(i8080_cpu_t *cpu, uint8_t val) {
+    uint8_t res = cpu->a - val;
+    SET_ZSP();
+    cpu->f.cy = CARRY(cpu->a, 8);
+    cpu->f.ac = CARRY(cpu->a, 4);
+}
+
+static void daa(i8080_cpu_t *cpu) {
+    if (cpu->a & 0xF > 9 || cpu->f.ac) {
+        add(cpu, 0x6, WITHOUT_CARRY);
+    }
+
+    if (cpu->a >> 4 > 9 || cpu->f.cy) {
+        add(cpu, 0x60, WITHOUT_CARRY);
+    }
+}
+
+static inline void push(i8080_cpu_t *cpu, uint16_t val) {
+    write_word(cpu, cpu->sp-2, val);
+    cpu->sp -= 2;
+}
+
+static inline uint16_t pop(i8080_cpu_t *cpu) {
+    uint16_t val = read_word(cpu, cpu->sp);
+    cpu->sp += 2;
+    return val;
+}
+
+static void call(i8080_cpu_t *cpu, uint16_t addr) {
+    push(cpu, cpu->pc);
+    cpu->pc = addr;
+}
+
+static void ret(i8080_cpu_t *cpu) {
+    cpu->pc = pop(cpu);
 }
 
 static void decode(i8080_cpu_t *cpu, instruction_t instr) {
@@ -249,10 +384,10 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // MVI M, data
         case MVI_M_D8: set_m(cpu, fetch_byte(cpu)); break;
         // LXI rp, data 16
-        case LXI_B_D16:  cpu->bc = fetch_word(cpu);
-        case LXI_D_D16:  cpu->de = fetch_word(cpu);
-        case LXI_H_D16:  cpu->hl = fetch_word(cpu);
-        case LXI_SP_D16: cpu->sp = fetch_word(cpu);
+        case LXI_B_D16:  cpu->bc = fetch_word(cpu); break;
+        case LXI_D_D16:  cpu->de = fetch_word(cpu); break;
+        case LXI_H_D16:  cpu->hl = fetch_word(cpu); break;
+        case LXI_SP_D16: cpu->sp = fetch_word(cpu); break;
         // LDA addr
         case LDA_A16: cpu->a = cpu->read_byte(fetch_word(cpu)); break;
         // STA addr
@@ -467,11 +602,11 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // PUSH PSW
         case PUSH_PSW: push(cpu, cpu->psw); break;
         // POP rp
-        case POP_B: cpu->bc = pop(cpu);
-        case POP_D: cpu->de = pop(cpu);
-        case POP_H: cpu->hl = pop(cpu);
-        // POP PSW
-        case POP_PSW: cpu->psw = pop(cpu);
+        case POP_B: cpu->bc = pop(cpu); break;
+        case POP_D: cpu->de = pop(cpu); break;
+        case POP_H: cpu->hl = pop(cpu); break;
+        // POP PSW 
+        case POP_PSW: cpu->psw = pop(cpu); break;
         // XTHL
         case XTHL: xthl(cpu); break;
         // SPHL
@@ -491,141 +626,16 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
     }
 }
 
-static void daa(i8080_cpu_t *cpu) {
-    if (cpu->a & 0xF > 9 || cpu->f.ac) {
-        add(cpu, 0x6, WITHOUT_CARRY);
+void i8080_step(i8080_cpu_t *cpu) {
+    if (cpu->inte && cpu->pending && cpu->delay == 0) {
+        cpu->pending = false;
+        cpu->hlt = false;
+        decode(cpu, cpu->vec);
+    } else if (!cpu->hlt) {
+        uint8_t opcode = fetch_byte(cpu);
+        cpu->cycles += CYCLES[opcode];
+        decode(cpu, opcode);
     }
-
-    if (cpu->a >> 4 > 9 || cpu->f.cy) {
-        add(cpu, 0x60, WITHOUT_CARRY);
-    }
-}
-
-static void xchg(i8080_cpu_t *cpu) {
-    uint8_t tmp = cpu->de;
-    cpu->de = cpu->hl;
-    cpu->hl = tmp;
-}
-
-static void xthl(i8080_cpu_t *cpu) {
-    uint16_t tmp = cpu->hl;
-    cpu->hl = read_word(cpu, cpu->sp);
-    write_word(cpu, cpu->sp, tmp);
-}
-
-static void rlc(i8080_cpu_t *cpu) {
-    bool msb = BIT(cpu->a, 7);
-    cpu->a <<= 1;
-    cpu->a |= msb;
-    cpu->f.cy = msb;
-}
-
-static void rrc(i8080_cpu_t *cpu) {
-    bool lsb = BIT(cpu->a, 0);
-    cpu->a >>= 1;
-    cpu->a |= lsb >> 7;
-    cpu->f.cy = lsb;
-}
-
-static void ral(i8080_cpu_t *cpu) {
-    bool msb = BIT(cpu->a, 7);
-    cpu->a <<= 1;
-    cpu->a |= cpu->f.cy;
-    cpu->f.cy = msb;
-}
-
-static void rar(i8080_cpu_t *cpu) {
-    bool lsb = BIT(cpu->a, 0);
-    cpu->a >>= 1;
-    cpu->a |= cpu->f.cy >> 7;
-    cpu->f.cy = lsb;
-}
-
-static void add(i8080_cpu_t *cpu, uint8_t val, bool c) {
-    uint8_t res = cpu->a + val + c;
-    SET_ZSP();
-    cpu->f.cy = CARRY(cpu->a, 7);
-    cpu->f.ac = CARRY(cpu->a, 3);
-    cpu->a = res;
-}
-
-static void sub(i8080_cpu_t* cpu, uint8_t val, bool b) {
-    uint8_t res = cpu->a - val - b;
-    SET_ZSP();
-    cpu->f.cy = CARRY(cpu->a, 7);
-    cpu->f.ac = CARRY(cpu->a, 3);
-    cpu->a = res;
-}
-
-static uint8_t inc(i8080_cpu_t* cpu, uint8_t val) {
-    uint8_t res = val++;
-    SET_ZSP();
-    cpu->f.ac = CARRY(cpu->a, 3);
-    return res; 
-}
-
-static uint8_t dec(i8080_cpu_t* cpu, uint8_t val) {
-    uint8_t res = val--;
-    SET_ZSP();
-    cpu->f.ac = CARRY(cpu->a, 3);
-    return res; 
-}
-
-static void dad(i8080_cpu_t* cpu, uint16_t val) {
-    uint16_t res = cpu->hl + val;
-    cpu->f.cy = CARRY(cpu->hl, 15);
-    cpu->hl = res;
-}
-
-static void and(i8080_cpu_t* cpu, uint8_t val) {
-    uint8_t res = cpu->a & val;
-    SET_ZSP();
-    cpu->f.cy = 0;
-    cpu->f.ac = 0;
-    cpu->a = res;
-}
-
-static void xor(i8080_cpu_t *cpu, uint8_t val) {
-    uint8_t res = cpu->a ^ val;
-    SET_ZSP();
-    cpu->f.cy = 0;
-    cpu->f.ac = 0;
-    cpu->a = res;
-}
-
-static void or(i8080_cpu_t *cpu, uint8_t val) {
-    uint8_t res = cpu->a | val;
-    SET_ZSP();
-    cpu->f.cy = 0;
-    cpu->f.ac = 0;
-    cpu->a = res;
-}
-
-static void cmp(i8080_cpu_t *cpu, uint8_t val) {
-    uint8_t res = cpu->a - val;
-    SET_ZSP();
-    cpu->f.cy = CARRY(cpu->a, 7);
-    cpu->f.ac = CARRY(cpu->a, 3);
-}
-
-static inline void push(i8080_cpu_t *cpu, uint16_t val) {
-    write_word(cpu, cpu->sp-2, val);
-    cpu->sp -= 2;
-}
-
-static inline uint16_t pop(i8080_cpu_t *cpu) {
-    uint16_t val = read_word(cpu, cpu->sp);
-    cpu->sp += 2;
-    return val;
-}
-
-static void call(i8080_cpu_t *cpu, uint16_t addr) {
-    push(cpu, cpu->pc);
-    cpu->pc = addr;
-}
-
-static void ret(i8080_cpu_t *cpu) {
-    cpu->pc = pop(cpu);
 }
 
 #undef BIT

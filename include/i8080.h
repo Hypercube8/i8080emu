@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 typedef enum {
     NOP       = 0x00,
@@ -291,7 +292,7 @@ typedef struct {
 
     bool pending;
     bool inte;
-    bool delay;
+    uint8_t delay;
     uint8_t vec;
     
     bool hlt;
@@ -303,3 +304,13 @@ typedef struct {
     i8080_input_t in_byte;
     i8080_output_t out_byte;
 } i8080_cpu_t;
+
+void i8080_init(i8080_cpu_t *cpu, 
+                i8080_reader_t rb, 
+                i8080_writer_t wb,
+                i8080_input_t inb,
+                i8080_output_t outb);
+void i8080_step(i8080_cpu_t *cpu);
+void i8080_debug(i8080_cpu_t *cpu);
+void i8080_dump(i8080_cpu_t *cpu, uint8_t page);
+void i8080_interrupt(i8080_cpu_t *cpu, instruction_t instr);
