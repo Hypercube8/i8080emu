@@ -37,8 +37,10 @@ int main() {
     i8080_dump(&cpu, 0x00);
     while (!cpu.hlt) {
         i8080_step(&cpu);
+        fgetc(stdin);
+        i8080_debug(&cpu);
+        printf("\n %.2x \n", memptr[cpu.pc]);
     }
-    i8080_debug(&cpu);
     free(memptr);
     return 0;
 }

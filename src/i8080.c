@@ -204,7 +204,7 @@ static void ral(i8080_cpu_t *cpu) {
 static void rar(i8080_cpu_t *cpu) {
     bool lsb = BIT(cpu->a, 0);
     cpu->a >>= 1;
-    cpu->a |= cpu->f.cy >> 7;
+    cpu->a |= cpu->f.cy << 7;
     cpu->f.cy = lsb;
 }
 
@@ -225,14 +225,14 @@ static void sub(i8080_cpu_t* cpu, uint8_t val, bool b) {
 }
 
 static uint8_t inc(i8080_cpu_t* cpu, uint8_t val) {
-    uint16_t res = val++;
+    uint16_t res = val + 1;
     SET_ZSP();
     cpu->f.ac = CARRY(cpu->a, 4);
     return res; 
 }
 
 static uint8_t dec(i8080_cpu_t* cpu, uint8_t val) {
-    uint16_t res = val--;
+    uint16_t res = val - 1;
     SET_ZSP();
     cpu->f.ac = CARRY(cpu->a, 4);
     return res; 
@@ -296,13 +296,33 @@ static inline uint16_t pop(i8080_cpu_t *cpu) {
     return val;
 }
 
+static void jmp_cond(i8080_cpu_t *cpu, bool condition) {
+    uint16_t addr = fetch_word(cpu);
+    if (condition) {
+        cpu->pc = addr;
+    }
+}
+
 static void call(i8080_cpu_t *cpu, uint16_t addr) {
     push(cpu, cpu->pc);
     cpu->pc = addr;
 }
 
+static void call_cond(i8080_cpu_t *cpu, bool condition) {
+    uint16_t addr = fetch_word(cpu);
+    if (condition) {
+        call(cpu, addr);
+    }
+}
+
 static void ret(i8080_cpu_t *cpu) {
     cpu->pc = pop(cpu);
+}
+
+static void ret_cond(i8080_cpu_t *cpu, bool condition) {
+    if (condition) {
+        ret(cpu);
+    }
 }
 
 static void decode(i8080_cpu_t *cpu, instruction_t instr) {
@@ -554,36 +574,36 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // JMP addr
         case JMP_A16: cpu->pc = fetch_word(cpu); break;
         // Jcondition addr
-        case JNZ_A16: if (NZ) cpu->pc = fetch_word(cpu); break; 
-        case JZ_A16:  if (Z)  cpu->pc = fetch_word(cpu); break;
-        case JNC_A16: if (NC) cpu->pc = fetch_word(cpu); break;
-        case JC_A16:  if (C)  cpu->pc = fetch_word(cpu); break;
-        case JPO_A16: if (PO) cpu->pc = fetch_word(cpu); break;
-        case JPE_A16: if (PE) cpu->pc = fetch_word(cpu); break;
-        case JP_A16:  if (P)  cpu->pc = fetch_word(cpu); break;
-        case JM_A16:  if (M)  cpu->pc = fetch_word(cpu); break;
+        case JNZ_A16: jmp_cond(cpu, NZ); break; 
+        case JZ_A16:  jmp_cond(cpu, Z ); break;
+        case JNC_A16: jmp_cond(cpu, NC); break;
+        case JC_A16:  jmp_cond(cpu, C ); break;
+        case JPO_A16: jmp_cond(cpu, PO); break;
+        case JPE_A16: jmp_cond(cpu, PE); break;
+        case JP_A16:  jmp_cond(cpu, P ); break;
+        case JM_A16:  jmp_cond(cpu, M ); break;
         // CALL A16
         case CALL_A16: call(cpu, fetch_word(cpu)); break;
         // Ccondition addr
-        case CNZ_A16: if (NZ) call(cpu, fetch_word(cpu)); break;
-        case CZ_A16:  if (Z)  call(cpu, fetch_word(cpu)); break;
-        case CNC_A16: if (NC) call(cpu, fetch_word(cpu)); break;
-        case CC_A16:  if (C)  call(cpu, fetch_word(cpu)); break;
-        case CPO_A16: if (PO) call(cpu, fetch_word(cpu)); break;
-        case CPE_A16: if (PE) call(cpu, fetch_word(cpu)); break;
-        case CP_A16:  if (P)  call(cpu, fetch_word(cpu)); break;
-        case CM_A16:  if (M)  call(cpu, fetch_word(cpu)); break;
+        case CNZ_A16: call_cond(cpu, NZ); break;
+        case CZ_A16:  call_cond(cpu, Z ); break;
+        case CNC_A16: call_cond(cpu, NC); break;
+        case CC_A16:  call_cond(cpu, C ); break;
+        case CPO_A16: call_cond(cpu, PO); break;
+        case CPE_A16: call_cond(cpu, PE); break;
+        case CP_A16:  call_cond(cpu, P ); break;
+        case CM_A16:  call_cond(cpu, M ); break;
         // RET
         case RET: ret(cpu); break;
         // Rcondition 
-        case RNZ: if (NZ) ret(cpu); break;
-        case RZ:  if (Z)  ret(cpu); break;
-        case RNC: if (NC) ret(cpu); break;
-        case RC:  if (C)  ret(cpu); break;
-        case RPO: if (PO) ret(cpu); break;
-        case RPE: if (PE) ret(cpu); break;
-        case RP:  if (P)  ret(cpu); break;
-        case RM:  if (M)  ret(cpu); break;
+        case RNZ: ret_cond(cpu, NZ); break;
+        case RZ:  ret_cond(cpu, Z ); break;
+        case RNC: ret_cond(cpu, NC); break;
+        case RC:  ret_cond(cpu, C ); break;
+        case RPO: ret_cond(cpu, PO); break;
+        case RPE: ret_cond(cpu, PE); break;
+        case RP:  ret_cond(cpu, P ); break;
+        case RM:  ret_cond(cpu, M ); break;
         // RST n
         case RST_0: call(cpu, 0x0000); break;
         case RST_1: call(cpu, 0x0008); break;
