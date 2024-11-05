@@ -21,9 +21,9 @@
 #define M cpu->f.s
 
 #define SET_ZSP() do {      \
-    cpu->f.z = res == 0;    \
+    cpu->f.z = (res & 0xFF) == 0;    \
     cpu->f.s = BIT(res, 7); \
-    cpu->f.p = PARITY[res]; \
+    cpu->f.p = PARITY[res & 0xFF]; \
 } while (0)
 
 #define CARRY(A, B) BIT(res ^ (A) ^ val, (B))
@@ -120,7 +120,7 @@ static inline uint16_t read_word(i8080_cpu_t* cpu, uint16_t addr) {
     return CONCAT(lo, hi);
 }
 
-static inline void write_word(i8080_cpu_t* cpu, uint16_t addr, uint8_t val) {
+static inline void write_word(i8080_cpu_t* cpu, uint16_t addr, uint16_t val) {
     cpu->write_byte(addr, LO(val));
     cpu->write_byte(addr+1, HI(val));
 }
@@ -190,7 +190,7 @@ static void rlc(i8080_cpu_t *cpu) {
 static void rrc(i8080_cpu_t *cpu) {
     bool lsb = BIT(cpu->a, 0);
     cpu->a >>= 1;
-    cpu->a |= lsb >> 7;
+    cpu->a |= lsb << 7;
     cpu->f.cy = lsb;
 }
 
@@ -269,20 +269,30 @@ static void or(i8080_cpu_t *cpu, uint8_t val) {
 }
 
 static void cmp(i8080_cpu_t *cpu, uint8_t val) {
-    uint8_t res = cpu->a - val;
+    uint16_t res = cpu->a - val;
     SET_ZSP();
     cpu->f.cy = CARRY(cpu->a, 8);
     cpu->f.ac = CARRY(cpu->a, 4);
 }
 
 static void daa(i8080_cpu_t *cpu) {
-    if (cpu->a & 0xF > 9 || cpu->f.ac) {
-        add(cpu, 0x6, WITHOUT_CARRY);
+    bool carry = cpu->f.cy;
+    uint8_t correction = 0;
+
+    uint8_t lo = cpu->a & 0xf;
+    uint8_t hi = cpu->a >> 4;
+
+    if (lo > 9 || cpu->f.ac) {
+        correction += 0x6;
     }
 
-    if (cpu->a >> 4 > 9 || cpu->f.cy) {
-        add(cpu, 0x60, WITHOUT_CARRY);
+    if (hi > 9 || cpu->f.cy || (hi >= 9 && lo > 9)) {
+        correction += 0x60;
+        carry = 1;
     }
+
+    add(cpu, correction, WITHOUT_CARRY);
+    cpu->f.cy = carry;
 }
 
 static inline void push(i8080_cpu_t *cpu, uint16_t val) {
@@ -518,7 +528,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case ANA_H: and(cpu, cpu->h); break;
         case ANA_L: and(cpu, cpu->l); break;
         // ANA M
-        case ANA_M: and(cpu, M); break;
+        case ANA_M: and(cpu, get_m(cpu)); break;
         // ANI data
         case ANI_D8: and(cpu, fetch_byte(cpu)); break;
         // XRA r
@@ -530,7 +540,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case XRA_H: xor(cpu, cpu->h); break;
         case XRA_L: xor(cpu, cpu->l); break;
         // XRA M
-        case XRA_M: xor(cpu, M); break;
+        case XRA_M: xor(cpu, get_m(cpu)); break;
         // XRI data
         case XRI_D8: xor(cpu, fetch_byte(cpu)); break;
         // ORA r
@@ -542,7 +552,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case ORA_H: or(cpu, cpu->h); break;
         case ORA_L: or(cpu, cpu->l); break;
         // ORA M
-        case ORA_M: or(cpu, M); break;
+        case ORA_M: or(cpu, get_m(cpu)); break;
         // ORI data
         case ORI_D8: or(cpu, fetch_byte(cpu)); break;
         // CMP r
@@ -554,7 +564,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case CMP_H: cmp(cpu, cpu->h); break;
         case CMP_L: cmp(cpu, cpu->l); break;
         // CMP M
-        case CMP_M: cmp(cpu, M); break;
+        case CMP_M: cmp(cpu, get_m(cpu)); break;
         // CMP data
         case CPI_D8: cmp(cpu, fetch_byte(cpu)); break;
         // RLC
