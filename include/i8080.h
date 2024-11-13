@@ -1,8 +1,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <math.h>
+#include <string.h>
 
 typedef enum {
     NOP       = 0x00,
@@ -311,6 +311,9 @@ void i8080_init(i8080_cpu_t *cpu,
                 i8080_input_t inb,
                 i8080_output_t outb);
 void i8080_step(i8080_cpu_t *cpu);
-void i8080_debug(i8080_cpu_t *cpu);
-void i8080_dump(i8080_cpu_t *cpu, uint8_t page);
+#ifdef DEBUG
+void i8080_dump_registers(i8080_cpu_t *cpu);
+void i8080_dump_memory(i8080_cpu_t *cpu, uint8_t page);
+void i8080_dump_stack(i8080_cpu_t *cpu);
+#endif 
 void i8080_interrupt(i8080_cpu_t *cpu, instruction_t instr);

@@ -1,4 +1,5 @@
 #include "i8080.h"
+#include <stdlib.h>
 
 uint8_t *memptr;
 bool finished = false;
@@ -52,7 +53,7 @@ void outb(uint8_t port, uint8_t val) {
 
 int main() {
     memptr = malloc(0x10000 * sizeof(uint8_t));
-    load_file("testing/TST8080.COM");
+    load_file("roms/8080PRE.COM");
     memptr[0x0] = OUT_D8;
     memptr[0x1] = 0x00;
     memptr[0x5] = OUT_D8;
@@ -61,11 +62,16 @@ int main() {
     i8080_init(&cpu, rb, wb, inb, outb);
     cpu.pc = 0x100;
     while (!cpu.hlt && !finished) {
+        // #if __linux__
+        //     system("clear");
+        // #elif _WIN32
+        //     system("cls");
+        // #endif
         i8080_step(&cpu);
+        i8080_dump_registers(&cpu);
+        i8080_dump_memory(&cpu, 0x00);
+        i8080_dump_stack(&cpu);
         fgetc(stdin);
-        i8080_debug(&cpu);
-        i8080_dump(&cpu, 0x07);
-        printf("\n %.2x \n", memptr[cpu.pc]);
     }
     free(memptr);
     return 0;

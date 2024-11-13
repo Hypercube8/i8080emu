@@ -64,37 +64,40 @@ static inline void set_m(i8080_cpu_t* cpu, uint8_t val) {
     cpu->write_byte(cpu->hl, val);
 }
 
-void i8080_debug(i8080_cpu_t* cpu) {
-    static int callnum = 1;
-    printf("\n Debug Call #%d \n", callnum);
-    printf("\n Registers: \n");
-    printf("\t A: %.2x", cpu->a);
-    printf(" B: %.2x", cpu->b);
-    printf(" C: %.2x", cpu->c);
-    printf(" D: %.2x", cpu->d);
-    printf(" E: %.2x", cpu->e);
-    printf(" H: %.2x", cpu->h);
-    printf(" L: %.2x \n", cpu->l);
-    printf("\t M: %.2x", get_m(cpu));
-    printf("\n Register Pairs: \n");
-    printf("\t PC: %.4x \n", cpu->pc);
-    printf("\t BC: %.4x", cpu->bc);
-    printf(" DE: %.4x", cpu->de);
-    printf(" HL: %.4x", cpu->hl);
-    printf(" SP: %.4x \n", cpu->sp);
-    printf("\t PSW: %.4x", cpu->psw);
-    printf("\n Flags: \n");
-    printf("\t F: %d \n", cpu->psw & 0xFF);
-    printf("\t Z: %d", cpu->f.z);
-    printf(" S: %d", cpu->f.s);
-    printf(" P: %d", cpu->f.p);
-    printf(" CY: %d", cpu->f.cy);
-    printf(" AC: %d", cpu->f.ac);
-    callnum++;
+#ifdef DEBUG
+void flags_as_str(i8080_cpu_t *cpu, char *flags) {
+    char f[8];
+    f[0] =  cpu->f.s ? 'S' : 's'; 
+    f[1] =  cpu->f.z ? 'Z' : 'z';
+    f[2] = '0';
+    f[3] = cpu->f.ac ? 'A' : 'a';
+    f[4] = '0';
+    f[5] = cpu->f.p ? 'P' : 'p';
+    f[6] = '1';
+    f[7] = cpu->f.cy ? 'C' : 'c';
+    strcpy(flags, f);
 }
 
-void i8080_dump(i8080_cpu_t *cpu, uint8_t page) {
-    printf("Memory Dump of Page #%d", page);
+void i8080_dump_registers(i8080_cpu_t* cpu) {
+    printf("\nREGISTERS AND FLAGS\n");
+    printf("\tPC: %.4x \n", cpu->pc);
+    printf("\tSP: %.4x \n", cpu->sp);
+    printf("\tA: %.2x", cpu->a);
+    printf(" F: %.2x \n", cpu->f);
+    printf("\tB: %.2x", cpu->b);
+    printf(" C: %.2x \n", cpu->c);
+    printf("\tD: %.2x", cpu->d);
+    printf(" E: %.2x \n", cpu->e);
+    printf("\tH: %.2x", cpu->h);
+    printf(" L: %.2x \n", cpu->l);
+
+    char flags[8];
+    flags_as_str(cpu, flags);
+    printf("\tflags: %s", flags);
+}
+
+void i8080_dump_memory(i8080_cpu_t *cpu, uint8_t page) {
+    printf("\nMEMORY - PAGE %.2x", page);
     uint16_t base = page * 0xFF;
     for (int i=0; i<16; i++) {
         printf("\n \t %.4x: ", base + i * 16);
@@ -103,6 +106,15 @@ void i8080_dump(i8080_cpu_t *cpu, uint8_t page) {
         }
     }
 }
+
+void i8080_dump_stack(i8080_cpu_t *cpu) {
+    printf("\nSTACK\n");
+    printf("\t> %.2x \n", cpu->read_byte(cpu->sp));
+    for (int i = 1; i<10; i++) {
+        printf("\t  %.2x \n", cpu->read_byte(cpu->sp+i));
+    }
+}
+#endif
 
 static inline uint8_t fetch_byte(i8080_cpu_t* cpu) {
     return cpu->read_byte(cpu->pc++);
