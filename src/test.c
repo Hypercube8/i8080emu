@@ -53,7 +53,7 @@ void outb(uint8_t port, uint8_t val) {
 
 int main() {
     memptr = malloc(0x10000 * sizeof(uint8_t));
-    load_file("roms/8080PRE.COM");
+    load_file("roms/8080EXER.COM");
     memptr[0x0] = OUT_D8;
     memptr[0x1] = 0x00;
     memptr[0x5] = OUT_D8;
@@ -69,7 +69,7 @@ int main() {
         // #endif
         i8080_step(&cpu);
         i8080_dump_registers(&cpu);
-        i8080_dump_memory(&cpu, 0x00);
+        //i8080_dump_memory(&cpu, 0x00);
         i8080_dump_stack(&cpu);
         fgetc(stdin);
     }

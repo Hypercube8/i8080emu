@@ -257,14 +257,22 @@ typedef uint8_t (*i8080_input_t)(uint8_t);
 typedef void (*i8080_output_t)(uint8_t, uint8_t);
 
 typedef struct {
-    bool s    : 1;
-    bool z    : 1;
-    bool pad1 : 1;
-    bool ac   : 1;
-    bool pad2 : 1;
-    bool p    : 1;
-    bool pad3 : 1;
     bool cy   : 1;
+    bool pad1 : 1;
+    bool p    : 1;
+    bool pad2 : 1;
+    bool ac   : 1;
+    bool pad3 : 1;
+    bool z    : 1;
+    bool s    : 1;
+    // bool s    : 1;
+    // bool z    : 1;
+    // bool pad1 : 1;
+    // bool ac   : 1;
+    // bool pad2 : 1;
+    // bool p    : 1;
+    // bool pad3 : 1;
+    // bool cy   : 1;
 } i8080_flags_t;
 
 typedef struct {
