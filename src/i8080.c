@@ -33,7 +33,7 @@ void i8080_init(i8080_cpu_t* cpu,
                 i8080_writer_t wb, 
                 i8080_input_t inb, 
                 i8080_output_t outb) {
-    cpu->psw = 0x0004;
+    cpu->psw = 0x0002;
     cpu->bc  = 0x0000;
     cpu->de  = 0x0000;
     cpu->hl  = 0x0000;
@@ -83,7 +83,6 @@ void i8080_dump_registers(i8080_cpu_t* cpu) {
     printf("\tPC: %.4x \n", cpu->pc);
     printf("\tSP: %.4x \n", cpu->sp);
     printf("\tA: %.2x", cpu->a);
-    printf(" F: %.2x \n", cpu->f);
     printf("\tB: %.2x", cpu->b);
     printf(" C: %.2x \n", cpu->c);
     printf("\tD: %.2x", cpu->d);
@@ -181,7 +180,7 @@ void i8080_interrupt(i8080_cpu_t *cpu, instruction_t instr) {
 }
 
 static void xchg(i8080_cpu_t *cpu) {
-    uint8_t tmp = cpu->de;
+    uint16_t tmp = cpu->de;
     cpu->de = cpu->hl;
     cpu->hl = tmp;
 }
@@ -224,7 +223,7 @@ static void add(i8080_cpu_t *cpu, uint8_t val, bool c) {
     uint16_t res = cpu->a + val + c;
     SET_ZSP();
     cpu->f.cy = CARRY(cpu->a, 8);
-    cpu->f.ac = CARRY(cpu->a, 4);
+    cpu->f.ac = ((cpu->a & 0x0F) + (val & 0x0F) + c) >> 4;
     cpu->a = res;
 }
 
@@ -232,21 +231,21 @@ static void sub(i8080_cpu_t* cpu, uint8_t val, bool b) {
     uint16_t res = cpu->a - val - b;
     SET_ZSP();
     cpu->f.cy = CARRY(cpu->a, 8);
-    cpu->f.ac = CARRY(cpu->a, 4);
-    cpu->a = res;
+    cpu->f.ac = BIT(~((cpu->a & 0x0F) - (val & 0x0F) - b), 4);
+    cpu->a = res; 
 }
 
 static uint8_t inc(i8080_cpu_t* cpu, uint8_t val) {
     uint16_t res = val + 1;
     SET_ZSP();
-    cpu->f.ac = CARRY(cpu->a, 4);
+    cpu->f.ac = (res & 0x0F) == 0;
     return res; 
 }
 
 static uint8_t dec(i8080_cpu_t* cpu, uint8_t val) {
     uint16_t res = val - 1;
     SET_ZSP();
-    cpu->f.ac = CARRY(cpu->a, 4);
+    cpu->f.ac = (res & 0x0F) != 0x0F;
     return res; 
 }
 
@@ -260,7 +259,7 @@ static void and(i8080_cpu_t* cpu, uint8_t val) {
     uint8_t res = cpu->a & val;
     SET_ZSP();
     cpu->f.cy = 0;
-    cpu->f.ac = 0;
+    cpu->f.ac = BIT(cpu->a | val, 3);
     cpu->a = res;
 }
 
@@ -284,7 +283,7 @@ static void cmp(i8080_cpu_t *cpu, uint8_t val) {
     uint16_t res = cpu->a - val;
     SET_ZSP();
     cpu->f.cy = CARRY(cpu->a, 8);
-    cpu->f.ac = CARRY(cpu->a, 4);
+    cpu->f.ac = BIT(~((cpu->a & 0x0F) - (val & 0x0F)), 4);
 }
 
 static void daa(i8080_cpu_t *cpu) {
@@ -501,7 +500,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case INR_D: cpu->d = inc(cpu, cpu->d); break;
         case INR_E: cpu->e = inc(cpu, cpu->e); break;
         case INR_H: cpu->h = inc(cpu, cpu->h); break;
-        case INR_L: cpu->l = inc(cpu, cpu->h); break;
+        case INR_L: cpu->l = inc(cpu, cpu->l); break;
         // INR M
         case INR_M: set_m(cpu, inc(cpu, get_m(cpu))); break;
         // DCR r
@@ -511,7 +510,7 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case DCR_D: cpu->d = dec(cpu, cpu->d); break;
         case DCR_E: cpu->e = dec(cpu, cpu->e); break;
         case DCR_H: cpu->h = dec(cpu, cpu->h); break;
-        case DCR_L: cpu->l = dec(cpu, cpu->h); break;
+        case DCR_L: cpu->l = dec(cpu, cpu->l); break;
         // DCR M
         case DCR_M: set_m(cpu, dec(cpu, get_m(cpu))); break;
         // INX rp
@@ -642,13 +641,13 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case PUSH_D: push(cpu, cpu->de); break;
         case PUSH_H: push(cpu, cpu->hl); break;
         // PUSH PSW
-        case PUSH_PSW: push(cpu, cpu->psw); break;
+        case PUSH_PSW: cpu->f.pad1 = 1; cpu->f.pad2=0; cpu->f.pad3=0; push(cpu, cpu->psw); break;
         // POP rp
         case POP_B: cpu->bc = pop(cpu); break;
         case POP_D: cpu->de = pop(cpu); break;
         case POP_H: cpu->hl = pop(cpu); break;
         // POP PSW 
-        case POP_PSW: cpu->psw = pop(cpu); break;
+        case POP_PSW: cpu->psw = pop(cpu); cpu->f.pad1 = 1; cpu->f.pad2=0; cpu->f.pad3=0; break;
         // XTHL
         case XTHL: xthl(cpu); break;
         // SPHL
@@ -660,9 +659,9 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // EI
         case EI: cpu->delay = 1; cpu->inte = true; break;
         // DI
-        case DI: cpu->inte = false;
+        case DI: cpu->inte = false; break;
         // HLT
-        case HLT: cpu->hlt = true;
+        case HLT: cpu->hlt = true; break;
         // NOP
         case NOP: break; 
     }
