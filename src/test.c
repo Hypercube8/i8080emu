@@ -52,6 +52,7 @@ void outb(uint8_t port, uint8_t val) {
 }
 
 int main() {
+    size_t ins;
     memptr = malloc(0x10000 * sizeof(uint8_t));
     load_file("roms/8080EXM.COM");
     memptr[0x0] = OUT_D8;
@@ -59,6 +60,7 @@ int main() {
     memptr[0x5] = OUT_D8;
     memptr[0x6] = 0x01;
     memptr[0x7] = RET;
+    
     i8080_init(&cpu, rb, wb, inb, outb);
     cpu.pc = 0x100;
     while (!cpu.hlt && !finished) {
@@ -72,7 +74,9 @@ int main() {
         //i8080_dump_memory(&cpu, 0x00);
         //i8080_dump_stack(&cpu);
         //fgetc(stdin);
+        ins++;
     }
+    printf("\nInstructions: %ld Cycles: %ld \n", ins, cpu.cycles);
     free(memptr);
     return 0;
 }

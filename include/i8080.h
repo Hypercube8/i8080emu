@@ -265,14 +265,6 @@ typedef struct {
     bool pad3 : 1;
     bool z    : 1;
     bool s    : 1;
-    // bool s    : 1;
-    // bool z    : 1;
-    // bool pad1 : 1;
-    // bool ac   : 1;
-    // bool pad2 : 1;
-    // bool p    : 1;
-    // bool pad3 : 1;
-    // bool cy   : 1;
 } i8080_flags_t;
 
 typedef struct {
@@ -305,7 +297,7 @@ typedef struct {
     
     bool hlt;
 
-    uint8_t cycles;
+    size_t cycles;
 
     i8080_reader_t read_byte;
     i8080_writer_t write_byte;
