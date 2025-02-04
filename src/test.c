@@ -54,7 +54,7 @@ void outb(uint8_t port, uint8_t val) {
 int main() {
     size_t ins;
     memptr = malloc(0x10000 * sizeof(uint8_t));
-    load_file("roms/8080EXM.COM");
+    load_file("roms/TST8080.COM");
     memptr[0x0] = OUT_D8;
     memptr[0x1] = 0x00;
     memptr[0x5] = OUT_D8;
