@@ -16,19 +16,19 @@ void load_file(const char *path) {
     fclose(f);
 }
 
-uint8_t rb(uint16_t addr) {
+uint8_t rb(void *userptr, uint16_t addr) {
     return memptr[addr];
 }
 
-void wb(uint16_t addr, uint8_t val) {
+void wb(void *userptr, uint16_t addr, uint8_t val) {
     memptr[addr] = val;
 }
 
-uint8_t inb(uint8_t port) {
+uint8_t inb(void *userptr, uint8_t port) {
     return 0;
 }
 
-void outb(uint8_t port, uint8_t val) {
+void outb(void *userptr, uint8_t port, uint8_t val) {
     switch (port) {
         case 0: {
             finished = true;
@@ -43,8 +43,8 @@ void outb(uint8_t port, uint8_t val) {
                 case 9: {
                     uint16_t addr = cpu.de;
                     do {
-                        printf("%c", rb(addr++));
-                    } while (rb(addr) != '$');
+                        printf("%c", rb(NULL, addr++));
+                    } while (rb(NULL, addr) != '$');
                     break;
                 }
             };
@@ -55,13 +55,13 @@ int main() {
     size_t ins;
     memptr = malloc(0x10000 * sizeof(uint8_t));
     load_file("roms/8080EXM.COM");
-    memptr[0x0] = OUT_D8;
-    memptr[0x1] = 0x00;
-    memptr[0x5] = OUT_D8;
-    memptr[0x6] = 0x01;
-    memptr[0x7] = RET;
+    memptr[RESTART_0+0] = OUT_D8;
+    memptr[RESTART_0+1] = 0x00;
+    memptr[RESTART_0+5] = OUT_D8;
+    memptr[RESTART_0+6] = 0x01;
+    memptr[RESTART_0+7] = RET;
     
-    i8080_init(&cpu, rb, wb, inb, outb);
+    i8080_init(&cpu, &cpu, rb, wb, inb, outb);
     cpu.pc = 0x100;
     while (!cpu.hlt && !finished) {
         // #if __linux__

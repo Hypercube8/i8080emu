@@ -24,7 +24,8 @@
 #define P !cpu->f.s
 #define M cpu->f.s
 
-void i8080_init(i8080_cpu_t* cpu, 
+void i8080_init(i8080_cpu_t *cpu,
+                void *uptr,
                 i8080_reader_t rb, 
                 i8080_writer_t wb, 
                 i8080_input_t inb, 
@@ -46,18 +47,36 @@ void i8080_init(i8080_cpu_t* cpu,
 
     cpu->cycles = 0;
 
+    cpu->userptr = uptr;
+
     cpu->read_byte  = rb;
     cpu->write_byte = wb;
     cpu->in_byte    = inb;
     cpu->out_byte   = outb;
 }
 
-static inline uint8_t get_m(i8080_cpu_t* cpu) {
-    return cpu->read_byte(cpu->hl);
+static inline uint8_t read_byte(i8080_cpu_t *cpu, uint16_t addr) {
+    return cpu->read_byte(cpu->userptr, addr);
 }
 
-static inline void set_m(i8080_cpu_t* cpu, uint8_t val) {
-    cpu->write_byte(cpu->hl, val);
+static inline void write_byte(i8080_cpu_t *cpu, uint16_t addr, uint8_t val) {
+    cpu->write_byte(cpu->userptr, addr, val);
+}
+
+static inline uint8_t in_byte(i8080_cpu_t *cpu, uint8_t port) {
+    return cpu->in_byte(cpu->userptr, port);
+}
+
+static inline void out_byte(i8080_cpu_t *cpu, uint8_t port, uint8_t val) {
+    cpu->out_byte(cpu->userptr, port, val);
+}
+
+static inline uint8_t get_m(i8080_cpu_t *cpu) {
+    return read_byte(cpu, cpu->hl);
+}
+
+static inline void set_m(i8080_cpu_t *cpu, uint8_t val) {
+    write_byte(cpu, cpu->hl, val);
 }
 
 #ifdef DEBUG
@@ -97,39 +116,39 @@ void i8080_dump_memory(i8080_cpu_t *cpu, uint8_t page) {
     for (int i=0; i<16; i++) {
         printf("\n \t %.4x: ", base + i * 16);
         for (int j=0; j<16; j++) {
-            printf("%.2x ", cpu->read_byte(base + i * 16 + j));
+            printf("%.2x ", read_byte(cpu, base + i * 16 + j));
         }
     }
 }
 
 void i8080_dump_stack(i8080_cpu_t *cpu) {
     printf("\nSTACK\n");
-    printf("\t> %.2x \n", cpu->read_byte(cpu->sp));
+    printf("\t> %.2x \n", read_byte(cpu, cpu->sp));
     for (int i = 1; i<10; i++) {
-        printf("\t  %.2x \n", cpu->read_byte(cpu->sp+i));
+        printf("\t  %.2x \n", read_byte(cpu, cpu->sp+i));
     }
 }
 #endif
 
 static inline uint8_t fetch_byte(i8080_cpu_t* cpu) {
-    return cpu->read_byte(cpu->pc++);
+    return read_byte(cpu, cpu->pc++);
 }
 
 static inline uint16_t fetch_word(i8080_cpu_t* cpu) {
-    uint8_t lo = cpu->read_byte(cpu->pc++);
-    uint8_t hi = cpu->read_byte(cpu->pc++);
+    uint8_t lo = read_byte(cpu, cpu->pc++);
+    uint8_t hi = read_byte(cpu, cpu->pc++);
     return CONCAT(lo, hi);
 }
 
 static inline uint16_t read_word(i8080_cpu_t* cpu, uint16_t addr) {
-    uint8_t lo = cpu->read_byte(addr);
-    uint8_t hi = cpu->read_byte(addr+1);
+    uint8_t lo = read_byte(cpu, addr);
+    uint8_t hi = read_byte(cpu, addr+1);
     return CONCAT(lo, hi);
 }
 
 static inline void write_word(i8080_cpu_t* cpu, uint16_t addr, uint16_t val) {
-    cpu->write_byte(addr, LOBYTE(val));
-    cpu->write_byte(addr+1, HIBYTE(val));
+    write_byte(cpu, addr, LOBYTE(val));
+    write_byte(cpu, addr+1, HIBYTE(val));
 }
 
 static const uint8_t SZP_TABLE[] = {
@@ -433,19 +452,19 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case LXI_H_D16:  cpu->hl = fetch_word(cpu); break;
         case LXI_SP_D16: cpu->sp = fetch_word(cpu); break;
         // LDA addr
-        case LDA_A16: cpu->a = cpu->read_byte(fetch_word(cpu)); break;
+        case LDA_A16: cpu->a = read_byte(cpu, fetch_word(cpu)); break;
         // STA addr
-        case STA_A16: cpu->write_byte(fetch_word(cpu), cpu->a); break; 
+        case STA_A16: write_byte(cpu, fetch_word(cpu), cpu->a); break; 
         // LHLD addr
         case LHLD_A16: cpu->hl = read_word(cpu, fetch_word(cpu)); break;
         // SHLD addr
         case SHLD_A16: write_word(cpu, fetch_word(cpu), cpu->hl); break;
         // LDAX rp
-        case LDAX_B: cpu->a = cpu->read_byte(cpu->bc); break;
-        case LDAX_D: cpu->a = cpu->read_byte(cpu->de); break;
+        case LDAX_B: cpu->a = read_byte(cpu, cpu->bc); break;
+        case LDAX_D: cpu->a = read_byte(cpu, cpu->de); break;
         // STAX rp
-        case STAX_B: cpu->write_byte(cpu->bc, cpu->a); break;
-        case STAX_D: cpu->write_byte(cpu->de, cpu->a); break;
+        case STAX_B: write_byte(cpu, cpu->bc, cpu->a); break;
+        case STAX_D: write_byte(cpu, cpu->de, cpu->a); break;
         // XCHG
         case XCHG: xchg(cpu); break;
         // ADD r 
@@ -629,14 +648,14 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         case RP:  ret_cond(cpu, P ); break;
         case RM:  ret_cond(cpu, M ); break;
         // RST n
-        case RST_0: call(cpu, 0x0000); break;
-        case RST_1: call(cpu, 0x0008); break;
-        case RST_2: call(cpu, 0x0010); break;
-        case RST_3: call(cpu, 0x0018); break;
-        case RST_4: call(cpu, 0x0020); break;
-        case RST_5: call(cpu, 0x0028); break;
-        case RST_6: call(cpu, 0x0030); break;
-        case RST_7: call(cpu, 0x0038); break;
+        case RST_0: call(cpu, RESTART_0); break;
+        case RST_1: call(cpu, RESTART_1); break;
+        case RST_2: call(cpu, RESTART_2); break;
+        case RST_3: call(cpu, RESTART_3); break;
+        case RST_4: call(cpu, RESTART_4); break;
+        case RST_5: call(cpu, RESTART_5); break;
+        case RST_6: call(cpu, RESTART_6); break;
+        case RST_7: call(cpu, RESTART_7); break;
         // PCHL
         case PCHL: cpu->pc = cpu->hl; break;
         // PUSH rp
@@ -656,9 +675,9 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // SPHL
         case SPHL: cpu->sp = cpu->hl; break;
         // IN
-        case IN_D8: cpu->a = cpu->in_byte(fetch_byte(cpu)); break;
+        case IN_D8: cpu->a = in_byte(cpu, fetch_byte(cpu)); break;
         // OUT
-        case OUT_D8: cpu->out_byte(fetch_byte(cpu), cpu->a); break;
+        case OUT_D8: out_byte(cpu, fetch_byte(cpu), cpu->a); break;
         // EI
         case EI: cpu->delay = 1; cpu->inte = true; break;
         // DI

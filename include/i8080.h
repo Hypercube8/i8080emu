@@ -251,10 +251,21 @@ typedef enum {
     RST_7     = 0xFF
 } instruction_t;
 
-typedef uint8_t (*i8080_reader_t)(uint16_t);
-typedef void (*i8080_writer_t)(uint16_t, uint8_t);
-typedef uint8_t (*i8080_input_t)(uint8_t);
-typedef void (*i8080_output_t)(uint8_t, uint8_t);
+enum restart_vector {
+    RESTART_0 = 0x0000,
+    RESTART_1 = 0x0008,
+    RESTART_2 = 0x0010,
+    RESTART_3 = 0x0018,
+    RESTART_4 = 0x0020,
+    RESTART_5 = 0x0028,
+    RESTART_6 = 0x0030,
+    RESTART_7 = 0x0038
+};
+
+typedef uint8_t (*i8080_reader_t)(void *, uint16_t);
+typedef void (*i8080_writer_t)(void *, uint16_t, uint8_t);
+typedef uint8_t (*i8080_input_t)(void *, uint8_t);
+typedef void (*i8080_output_t)(void *, uint8_t, uint8_t);
 
 typedef struct {
     bool cy   : 1;
@@ -299,13 +310,15 @@ typedef struct {
 
     size_t cycles;
 
+    void *userptr;
     i8080_reader_t read_byte;
     i8080_writer_t write_byte;
     i8080_input_t in_byte;
     i8080_output_t out_byte;
 } i8080_cpu_t;
 
-void i8080_init(i8080_cpu_t *cpu, 
+void i8080_init(i8080_cpu_t *cpu,
+                void *userptr,
                 i8080_reader_t rb, 
                 i8080_writer_t wb,
                 i8080_input_t inb,
