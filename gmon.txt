@@ -1,0 +1,196 @@
+Flat profile:
+
+Each sample counts as 0.01 seconds.
+  %   cumulative   self              self     total           
+ time   seconds   seconds    calls  ns/call  ns/call  name    
+ 41.95     13.54    13.54 2953023721     4.59     5.39  i8080_step
+ 37.24     25.56    12.02 2953023721     4.07     4.92  decode
+ 13.83     30.02     4.46 5545152047     0.80     0.80  rb
+  3.04     31.01     0.98                             run_test
+  2.14     31.70     0.69 953328378     0.72     0.72  wb
+  1.15     32.07     0.37 58551694     6.32     9.24  call_cond
+  0.74     32.31     0.24                             i8080_interrupt
+  0.00     32.31     0.00      466     0.00     0.00  outb
+  0.00     32.31     0.00        4     0.00     0.00  i8080_init
+  0.00     32.31     0.00        4     0.00     0.00  load_file
+
+ %         the percentage of the total running time of the
+time       program used by this function.
+
+cumulative a running sum of the number of seconds accounted
+ seconds   for by this function and those listed above it.
+
+ self      the number of seconds accounted for by this
+seconds    function alone.  This is the major sort for this
+           listing.
+
+calls      the number of times this function was invoked, if
+           this function is profiled, else blank.
+
+ self      the average number of milliseconds spent in this
+ms/call    function per call, if this function is profiled,
+	   else blank.
+
+ total     the average number of milliseconds spent in this
+ms/call    function and its descendents per call, if this
+	   function is profiled, else blank.
+
+name       the name of the function.  This is the minor sort
+           for this listing. The index shows the location of
+	   the function in the gprof listing. If the index is
+	   in parenthesis it shows where it would appear in
+	   the gprof listing if it were to be printed.
+
+Copyright (C) 2012-2020 Free Software Foundation, Inc.
+
+Copying and distribution of this file, with or without modification,
+are permitted in any medium without royalty provided the copyright
+notice and this notice are preserved.
+
+		     Call graph (explanation follows)
+
+
+granularity: each sample hit covers 2 byte(s) for 0.03% of 32.31 seconds
+
+index % time    self  children    called     name
+                                                 <spontaneous>
+[1]     99.3    0.98   31.09                 run_test [1]
+               13.54    2.38 2953023721/2953023721     i8080_step [2]
+               12.02    2.50 2953023721/2953023721     decode [3]
+                0.37    0.17 58551694/58551694     call_cond [6]
+                0.11    0.00 147219435/953328378     wb [5]
+                0.00    0.00     466/466         outb [8]
+                0.00    0.00       4/4           load_file [10]
+                0.00    0.00       4/4           i8080_init [9]
+-----------------------------------------------
+               13.54    2.38 2953023721/2953023721     run_test [1]
+[2]     49.3   13.54    2.38 2953023721         i8080_step [2]
+                2.38    0.00 2953023721/5545152047     rb [4]
+-----------------------------------------------
+               12.02    2.50 2953023721/2953023721     run_test [1]
+[3]     44.9   12.02    2.50 2953023721         decode [3]
+                1.99    0.00 2475024938/5545152047     rb [4]
+                0.51    0.00 700700493/953328378     wb [5]
+-----------------------------------------------
+                0.09    0.00 117103388/5545152047     call_cond [6]
+                1.99    0.00 2475024938/5545152047     decode [3]
+                2.38    0.00 2953023721/5545152047     i8080_step [2]
+[4]     13.8    4.46    0.00 5545152047         rb [4]
+-----------------------------------------------
+                0.08    0.00 105408450/953328378     call_cond [6]
+                0.11    0.00 147219435/953328378     run_test [1]
+                0.51    0.00 700700493/953328378     decode [3]
+[5]      2.1    0.69    0.00 953328378         wb [5]
+-----------------------------------------------
+                0.37    0.17 58551694/58551694     run_test [1]
+[6]      1.7    0.37    0.17 58551694         call_cond [6]
+                0.09    0.00 117103388/5545152047     rb [4]
+                0.08    0.00 105408450/953328378     wb [5]
+-----------------------------------------------
+                                                 <spontaneous>
+[7]      0.7    0.24    0.00                 i8080_interrupt [7]
+-----------------------------------------------
+                0.00    0.00     466/466         run_test [1]
+[8]      0.0    0.00    0.00     466         outb [8]
+-----------------------------------------------
+                0.00    0.00       4/4           run_test [1]
+[9]      0.0    0.00    0.00       4         i8080_init [9]
+-----------------------------------------------
+                0.00    0.00       4/4           run_test [1]
+[10]     0.0    0.00    0.00       4         load_file [10]
+-----------------------------------------------
+
+ This table describes the call tree of the program, and was sorted by
+ the total amount of time spent in each function and its children.
+
+ Each entry in this table consists of several lines.  The line with the
+ index number at the left hand margin lists the current function.
+ The lines above it list the functions that called this function,
+ and the lines below it list the functions this one called.
+ This line lists:
+     index	A unique number given to each element of the table.
+		Index numbers are sorted numerically.
+		The index number is printed next to every function name so
+		it is easier to look up where the function is in the table.
+
+     % time	This is the percentage of the `total' time that was spent
+		in this function and its children.  Note that due to
+		different viewpoints, functions excluded by options, etc,
+		these numbers will NOT add up to 100%.
+
+     self	This is the total amount of time spent in this function.
+
+     children	This is the total amount of time propagated into this
+		function by its children.
+
+     called	This is the number of times the function was called.
+		If the function called itself recursively, the number
+		only includes non-recursive calls, and is followed by
+		a `+' and the number of recursive calls.
+
+     name	The name of the current function.  The index number is
+		printed after it.  If the function is a member of a
+		cycle, the cycle number is printed between the
+		function's name and the index number.
+
+
+ For the function's parents, the fields have the following meanings:
+
+     self	This is the amount of time that was propagated directly
+		from the function into this parent.
+
+     children	This is the amount of time that was propagated from
+		the function's children into this parent.
+
+     called	This is the number of times this parent called the
+		function `/' the total number of times the function
+		was called.  Recursive calls to the function are not
+		included in the number after the `/'.
+
+     name	This is the name of the parent.  The parent's index
+		number is printed after it.  If the parent is a
+		member of a cycle, the cycle number is printed between
+		the name and the index number.
+
+ If the parents of the function cannot be determined, the word
+ `<spontaneous>' is printed in the `name' field, and all the other
+ fields are blank.
+
+ For the function's children, the fields have the following meanings:
+
+     self	This is the amount of time that was propagated directly
+		from the child into the function.
+
+     children	This is the amount of time that was propagated from the
+		child's children to the function.
+
+     called	This is the number of times the function called
+		this child `/' the total number of times the child
+		was called.  Recursive calls by the child are not
+		listed in the number after the `/'.
+
+     name	This is the name of the child.  The child's index
+		number is printed after it.  If the child is a
+		member of a cycle, the cycle number is printed
+		between the name and the index number.
+
+ If there are any cycles (circles) in the call graph, there is an
+ entry for the cycle-as-a-whole.  This entry shows who called the
+ cycle (as parents) and the members of the cycle (as children.)
+ The `+' recursive calls entry shows the number of function calls that
+ were internal to the cycle, and the calls entry for each member shows,
+ for that member, how many times it was called from other members of
+ the cycle.
+
+Copyright (C) 2012-2020 Free Software Foundation, Inc.
+
+Copying and distribution of this file, with or without modification,
+are permitted in any medium without royalty provided the copyright
+notice and this notice are preserved.
+
+Index by function name
+
+   [6] call_cond               [2] i8080_step              [1] run_test
+   [3] decode                 [10] load_file               [5] wb
+   [9] i8080_init              [8] outb
+   [7] i8080_interrupt         [4] rb
