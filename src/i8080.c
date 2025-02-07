@@ -1,11 +1,13 @@
 #include "i8080.h"
 
-#define ZSP_MASK 0b11000100
-
+#define SZP_MASK 0b11000100
 #define BIT(V, B) ((V) >> (B) & 1) 
+
+#define LOBYTE(WORD) ((WORD) & 0xFF)
+#define HIBYTE(WORD) ((WORD) >> 8)
+#define LONYBLE(BYTE) ((BYTE) & 0x0F)
+#define HINYBLE(BYTE) ((BYTE) & 0xF0)
 #define CONCAT(LO, HI) ((LO) | ((HI) << 8))
-#define LO(WORD) ((WORD) & 0xFF)
-#define HI(WORD) ((WORD) >> 8)
 
 #define WITH_CARRY cpu->f.cy
 #define WITHOUT_CARRY 0
@@ -21,8 +23,6 @@
 #define PE cpu->f.p
 #define P !cpu->f.s
 #define M cpu->f.s
-
-#define CARRY(A, B) BIT(res ^ (A) ^ val, (B))
 
 void i8080_init(i8080_cpu_t* cpu, 
                 i8080_reader_t rb, 
@@ -128,11 +128,11 @@ static inline uint16_t read_word(i8080_cpu_t* cpu, uint16_t addr) {
 }
 
 static inline void write_word(i8080_cpu_t* cpu, uint16_t addr, uint16_t val) {
-    cpu->write_byte(addr, LO(val));
-    cpu->write_byte(addr+1, HI(val));
+    cpu->write_byte(addr, LOBYTE(val));
+    cpu->write_byte(addr+1, HIBYTE(val));
 }
 
-static const uint8_t ZSP_TABLE[] = {
+static const uint8_t SZP_TABLE[] = {
     68, 0, 0, 4, 0, 4, 4, 0, 0, 4, 4, 0, 4, 0, 0, 4, 
     0, 4, 4, 0, 4, 0, 0, 4, 4, 0, 0, 4, 0, 4, 4, 0, 
     0, 4, 4, 0, 4, 0, 0, 4, 4, 0, 0, 4, 0, 4, 4, 0, 
@@ -170,9 +170,13 @@ static const uint8_t CYCLES[] = {
     5, 10, 10, 4,  11, 11, 7,  11, 5, 5,  10, 4,  11, 17, 7, 11  
 };
 
-static inline void set_zsp(i8080_cpu_t *cpu, uint8_t val) {
-    cpu->psw ^= cpu->psw & ZSP_MASK; 
-    cpu->psw |= ZSP_TABLE[val];
+static inline void set_szp(i8080_cpu_t *cpu, uint8_t val) {
+    cpu->psw ^= cpu->psw & SZP_MASK; 
+    cpu->psw |= SZP_TABLE[val];
+}
+
+static inline bool aux_carry(uint8_t res, uint8_t a, uint8_t val) {
+    return BIT(res ^ a ^ val, 4);
 }
 
 void i8080_interrupt(i8080_cpu_t *cpu, instruction_t instr) {
@@ -222,43 +226,43 @@ static void rar(i8080_cpu_t *cpu) {
 
 static void add(i8080_cpu_t *cpu, uint8_t val, bool c) {
     uint16_t res = cpu->a + val + c;
-    set_zsp(cpu, res);
-    cpu->f.cy = CARRY(cpu->a, 8);
-    cpu->f.ac = ((cpu->a & 0x0F) + (val & 0x0F) + c) >> 4;
+    set_szp(cpu, res);
+    cpu->f.cy = BIT(res, 8);
+    cpu->f.ac = aux_carry(res, cpu->a, val);
     cpu->a = res;
 }
 
 static void sub(i8080_cpu_t* cpu, uint8_t val, bool b) {
     uint16_t res = cpu->a - val - b;
-    set_zsp(cpu, res);
-    cpu->f.cy = CARRY(cpu->a, 8);
-    cpu->f.ac = BIT(~((cpu->a & 0x0F) - (val & 0x0F) - b), 4);
+    set_szp(cpu, res);
+    cpu->f.cy = BIT(res, 8);
+    cpu->f.ac = !aux_carry(res, cpu->a, val);
     cpu->a = res; 
 }
 
 static uint8_t inc(i8080_cpu_t* cpu, uint8_t val) {
     uint16_t res = val + 1;
-    set_zsp(cpu, res);
+    set_szp(cpu, res);
     cpu->f.ac = (res & 0x0F) == 0;
     return res; 
 }
 
 static uint8_t dec(i8080_cpu_t* cpu, uint8_t val) {
     uint16_t res = val - 1;
-    set_zsp(cpu, res);
+    set_szp(cpu, res);
     cpu->f.ac = (res & 0x0F) != 0x0F;
     return res; 
 }
 
 static void dad(i8080_cpu_t* cpu, uint16_t val) {
     uint32_t res = cpu->hl + val;
-    cpu->f.cy = CARRY(cpu->hl, 16);
+    cpu->f.cy = BIT(res, 16);
     cpu->hl = res;
 }
 
 static void and(i8080_cpu_t* cpu, uint8_t val) {
     uint8_t res = cpu->a & val;
-    set_zsp(cpu, res);
+    set_szp(cpu, res);
     cpu->f.cy = 0;
     cpu->f.ac = BIT(cpu->a | val, 3);
     cpu->a = res;
@@ -266,7 +270,7 @@ static void and(i8080_cpu_t* cpu, uint8_t val) {
 
 static void xor(i8080_cpu_t *cpu, uint8_t val) {
     uint8_t res = cpu->a ^ val;
-    set_zsp(cpu, res);
+    set_szp(cpu, res);
     cpu->f.cy = 0;
     cpu->f.ac = 0;
     cpu->a = res;
@@ -274,7 +278,7 @@ static void xor(i8080_cpu_t *cpu, uint8_t val) {
 
 static void or(i8080_cpu_t *cpu, uint8_t val) {
     uint8_t res = cpu->a | val;
-    set_zsp(cpu, res);
+    set_szp(cpu, res);
     cpu->f.cy = 0;
     cpu->f.ac = 0;
     cpu->a = res;
@@ -282,29 +286,25 @@ static void or(i8080_cpu_t *cpu, uint8_t val) {
 
 static void cmp(i8080_cpu_t *cpu, uint8_t val) {
     uint16_t res = cpu->a - val;
-    set_zsp(cpu, res);
-    cpu->f.cy = CARRY(cpu->a, 8);
-    cpu->f.ac = BIT(~((cpu->a & 0x0F) - (val & 0x0F)), 4);
+    set_szp(cpu, res);
+    cpu->f.cy = BIT(res, 8);
+    cpu->f.ac = !aux_carry(res, cpu->a, val);
 }
 
 static void daa(i8080_cpu_t *cpu) {
-    bool carry = cpu->f.cy;
-    uint8_t correction = 0;
-
-    uint8_t lo = cpu->a & 0xf;
-    uint8_t hi = cpu->a >> 4;
-
-    if (lo > 9 || cpu->f.ac) {
-        correction += 0x6;
+    if (LONYBLE(cpu->a) > 0x09 || cpu->f.ac) {
+        uint16_t res = cpu->a + 0x06;
+        cpu->f.cy |= BIT(res, 8);
+        cpu->f.ac = aux_carry(res, cpu->a, 0x06);
+        cpu->a = res;
     }
 
-    if (hi > 9 || cpu->f.cy || (hi >= 9 && lo > 9)) {
-        correction += 0x60;
-        carry = 1;
+    if (HINYBLE(cpu->a) > 0x90 || cpu->f.cy) {
+        uint16_t res = cpu->a + 0x60;
+        cpu->f.cy |= BIT(res, 8);
+        cpu->a = res;
     }
-
-    add(cpu, correction, WITHOUT_CARRY);
-    cpu->f.cy = carry;
+    set_szp(cpu, cpu->a);
 }
 
 static inline void push(i8080_cpu_t *cpu, uint16_t val) {
@@ -683,13 +683,16 @@ void i8080_step(i8080_cpu_t *cpu) {
 }
 
 #undef BIT
-#undef LO
-#undef HI
+#undef SZP_MASK
+
+#undef LOBYTE
+#undef HIBYTE
+#undef LONYBLE
+#undef HINYBLE
 #undef CONCAT
 
 #undef WITH_CARRY
 #undef WITHOUT_CARRY
-
 #undef WITH_BORROW
 #undef WITHOUT_BORROW
 
@@ -701,6 +704,3 @@ void i8080_step(i8080_cpu_t *cpu) {
 #undef PE 
 #undef P 
 #undef M 
-
-#undef SET_ZSP
-#undef CARRY
