@@ -13,7 +13,8 @@ typedef struct {
     size_t ins;
     size_t cycles;
     double time;
-    double speed;
+    double mips;
+    double mhz;
 } test_results_t;
 
 uint8_t *memptr;
@@ -76,7 +77,8 @@ void log_results(const char* test_name, test_results_t *results) {
     printf("\n\tInstructions Executed: %ld", results->ins);
     printf("\n\tCycles Executed: %ld", results->cycles);
     printf("\n\tTime Elapsed: %f", results->time);
-    printf("\n\tSpeed (MIPS): %f", results->speed);
+    printf("\n\tSpeed (MIPS): %f", results->mips);
+    printf("\n\tSpeed (MHz): %f", results->mhz);
 }
 
 void run_test(const char *path) {
@@ -108,8 +110,9 @@ void run_test(const char *path) {
     clock_t end = clock();
 
     results.time = (double)(end - begin) / CLOCKS_PER_SEC;
-    results.speed = (results.ins / results.time) / 1000000;
+    results.mips = (results.ins / results.time) / 1000000;
     results.cycles = cpu.cycles;
+    results.mhz = (results.cycles / results.time) / 1000000;
 
     free(memptr);
     log_results(path, &results);
