@@ -38,10 +38,9 @@ void i8080_init(i8080_cpu_t *cpu,
     cpu->pc = 0x0000;
     cpu->sp = 0x0000;
 
-    cpu->pending = false;
-    cpu->inte = true;
-    cpu->delay = 0;
-    cpu->vec = 0;
+    cpu->inte.pending = false;
+    cpu->inte.status = INT_ENABLED;
+    cpu->inte.vec = 0;
 
     cpu->hlt = false;
 
@@ -198,9 +197,9 @@ static inline bool aux_carry(uint8_t res, uint8_t a, uint8_t val) {
     return BIT(res ^ a ^ val, 4);
 }
 
-void i8080_interrupt(i8080_cpu_t *cpu, instruction_t instr) {
-    cpu->pending = true;
-    cpu->vec = instr;
+void i8080_interrupt(i8080_cpu_t *cpu, i8080_instruction_t instr) {
+    cpu->inte.pending = true;
+    cpu->inte.vec = instr;
 }
 
 static void xchg(i8080_cpu_t *cpu) {
@@ -368,7 +367,7 @@ static void ret_cond(i8080_cpu_t *cpu, bool condition) {
     }
 }
 
-static void decode(i8080_cpu_t *cpu, instruction_t instr) {
+static void decode(i8080_cpu_t *cpu, i8080_instruction_t instr) {
     switch (instr) {
         // MOV r1, r2
         case MOV_A_A: cpu->a = cpu->a; break;
@@ -679,9 +678,9 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
         // OUT
         case OUT_D8: out_byte(cpu, fetch_byte(cpu), cpu->a); break;
         // EI
-        case EI: cpu->delay = 1; cpu->inte = true; break;
+        case EI: cpu->inte.status = INT_ENABLED_NEXT; break;
         // DI
-        case DI: cpu->inte = false; break;
+        case DI: cpu->inte.status = INT_DISABLED; break;
         // HLT
         case HLT: cpu->hlt = true; break;
         // NOP
@@ -690,12 +689,15 @@ static void decode(i8080_cpu_t *cpu, instruction_t instr) {
 }
 
 void i8080_step(i8080_cpu_t *cpu) {
-    if (cpu->inte && cpu->pending && cpu->delay == 0) {
-        cpu->pending = false;
+    if (cpu->inte.status == INT_ENABLED && cpu->inte.pending) {
+        cpu->inte.pending = false;
         cpu->hlt = false;
-        decode(cpu, cpu->vec);
+        decode(cpu, cpu->inte.vec);
     } else if (!cpu->hlt) {
-        instruction_t opcode = fetch_byte(cpu);
+        if (cpu->inte.status == INT_ENABLED_NEXT) {
+            cpu->inte.status = INT_ENABLED;
+        }
+        i8080_instruction_t opcode = fetch_byte(cpu);
         cpu->cycles += CYCLES[opcode];
         decode(cpu, opcode);
     }

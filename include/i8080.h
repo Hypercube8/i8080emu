@@ -249,9 +249,9 @@ typedef enum {
     CM_A16    = 0xFC,
     CPI_D8    = 0xFE,
     RST_7     = 0xFF
-} instruction_t;
+} i8080_instruction_t;
 
-enum restart_vector {
+enum i8080_restart_vector {
     RESTART_0 = 0x0000,
     RESTART_1 = 0x0008,
     RESTART_2 = 0x0010,
@@ -261,6 +261,18 @@ enum restart_vector {
     RESTART_6 = 0x0030,
     RESTART_7 = 0x0038
 };
+
+typedef enum {
+    INT_ENABLED,
+    INT_ENABLED_NEXT,
+    INT_DISABLED
+} i8080_interrupt_state_t;
+
+typedef struct {
+    bool pending;
+    uint8_t vec;
+    i8080_interrupt_state_t status;
+} i8080_interrupt_t;
 
 typedef uint8_t (*i8080_reader_t)(void *, uint16_t);
 typedef void (*i8080_writer_t)(void *, uint16_t, uint8_t);
@@ -301,11 +313,7 @@ typedef struct {
     uint16_t pc;
     uint16_t sp;
 
-    bool pending;
-    bool inte;
-    uint8_t delay;
-    uint8_t vec;
-    
+    i8080_interrupt_t inte;
     bool hlt;
 
     size_t cycles;
@@ -329,4 +337,4 @@ void i8080_dump_registers(i8080_cpu_t *cpu);
 void i8080_dump_memory(i8080_cpu_t *cpu, uint8_t page);
 void i8080_dump_stack(i8080_cpu_t *cpu);
 #endif 
-void i8080_interrupt(i8080_cpu_t *cpu, instruction_t instr);
+void i8080_interrupt(i8080_cpu_t *cpu, i8080_instruction_t instr);

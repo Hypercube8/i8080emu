@@ -89,7 +89,7 @@ void run_test(const char *path) {
     memptr = malloc(0x10000 * sizeof(uint8_t));
     if (memptr == NULL) {
         perror("Failed to allocate memory");
-        return 1;
+        return;
     }
 
     load_file(path);
